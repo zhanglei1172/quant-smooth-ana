@@ -1,0 +1,20 @@
+# Core dependencies
+torch>=2.0.0
+transformers>=4.40.0
+numpy>=1.23.0
+
+# Configuration
+pyyaml>=6.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Data loading
+datasets>=2.18.0
+
+# Optional: for faster inference
+accelerate>=0.28.0
+
+# Optional: for model quantization (not required for visualization)
+# bitsandbytes>=0.41.0
+# fast-hadamard-transform

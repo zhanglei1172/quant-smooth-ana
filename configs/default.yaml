@@ -1,0 +1,81 @@
+# Default configuration for Quant Smooth Ana
+
+# Model configuration
+model:
+  path: "/path/to/your/model"
+  name: "model-name"
+  family: "llama"  # llama, qwen, mistral, etc.
+  hf_token: null
+
+# Data configuration
+data:
+  source: "pile"  # pile, wikitext2, c4, redpajama, hf:dataset_name, custom:/path/to/file
+  num_samples: 64
+  seq_len: 1024
+  seed: 0
+  # Custom dataset configuration
+  custom:
+    format: "text"  # text, json, csv
+    text_column: "text"  # For JSON/CSV files
+
+# Memory configuration
+memory:
+  device: "cuda"
+  offload_device: "cpu"
+  auto_offload: true
+
+# Visualization configuration
+visualization:
+  save_dir: "./figures"
+  dpi: 200
+  show_legend: true
+  
+  # Output formats (complete report)
+  output:
+    formats: ["png", "html", "csv", "json"]
+    report_name: "analysis_report"
+    include_raw_data: true
+  
+  # Enabled visualizations
+  enabled:
+    magnitude_input: true
+    magnitude_output: true
+    magnitude_weight: false
+    outlier_layer_wise: true
+    outlier_position: true
+    outlier_token: true
+    heatmap_3d: false
+    distribution: false
+  
+  # Magnitude configuration
+  magnitude:
+    components:
+      - q_proj
+      - o_proj
+      - down_proj
+      - up_proj
+    per_tensor: false
+    combined_plot: true
+  
+  # Outlier configuration
+  outlier:
+    threshold: 64  # Outlier threshold (relative to median)
+    component_type: "hidden_state"  # Component to analyze
+    decode_tokens: true  # Whether to decode token content
+  
+  # Layer selection (supports regex)
+  layer_selection:
+    # Method 1: By component type
+    components:
+      q_proj: "all"  # all, or [0, 5, 10]
+      down_proj: "all"
+    
+    # Method 2: By regex patterns
+    patterns:
+      - "layers\\.\\d+\\.mlp\\.down_proj"
+    
+    # Method 3: By range
+    ranges:
+      - component: "self_attn"
+        start: 0
+        end: 10

@@ -94,7 +94,9 @@ class WikiText2DataLoader(BuiltinDataLoader):
         split: str = "validation",
     ):
         super().__init__("wikitext2", tokenizer, num_samples, seq_len, seed, split)
-        self.data = get_wikitext2(tokenizer, num_samples, seed, seq_len, test_only=False)
+        self.data = get_wikitext2(
+            tokenizer, num_samples, seed, seq_len, test_only=False
+        )
 
 
 class C4DataLoader(BuiltinDataLoader):

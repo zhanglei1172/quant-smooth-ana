@@ -1,21 +1,16 @@
 """Simple test to verify model can run"""
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_path = "/dataset/workspace/zhangl98/models/Qwen3-0.6B/"
 
 print("Loading tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(
-    model_path,
-    trust_remote_code=True
-)
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 print("Loading model...")
 model = AutoModelForCausalLM.from_pretrained(
-    model_path,
-    trust_remote_code=True,
-    torch_dtype='auto',
-    device_map='auto'
+    model_path, trust_remote_code=True, torch_dtype="auto", device_map="auto"
 )
 
 print(f"Model config: max_position_embeddings={model.config.max_position_embeddings}")
@@ -49,4 +44,5 @@ try:
 except Exception as e:
     print(f"Test failed: {e}")
     import traceback
+
     traceback.print_exc()

@@ -12,62 +12,58 @@ from datetime import datetime
 class ReportGenerator:
     """
     HTML报告生成器
-    
+
     生成包含所有可视化图表的HTML报告
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """
         初始化报告生成器
-        
+
         Args:
             config: 配置字典
         """
         self.config = config
-        self.save_dir = config.get('save_dir', './figures')
-        self.model_name = config.get('model_name', 'model')
-        self.report_name = config.get('report_name', 'analysis_report')
-        
+        self.save_dir = config.get("save_dir", "./figures")
+        self.model_name = config.get("model_name", "model")
+        self.report_name = config.get("report_name", "analysis_report")
+
         # 报告内容
         self.title = f"{self.model_name} - Outlier Analysis Report"
         self.sections = []
-    
+
     def add_section(self, title: str, content: str, images: List[str] = None):
         """
         添加报告章节
-        
+
         Args:
             title: 章节标题
             content: 章节内容（HTML格式）
             images: 图片路径列表
         """
-        section = {
-            'title': title,
-            'content': content,
-            'images': images or []
-        }
+        section = {"title": title, "content": content, "images": images or []}
         self.sections.append(section)
-    
+
     def generate(self) -> str:
         """
         生成HTML报告
-        
+
         Returns:
             保存的HTML文件路径
         """
         html_content = self._generate_html()
-        
+
         # 保存HTML文件
         html_path = os.path.join(self.save_dir, f"{self.report_name}.html")
-        with open(html_path, 'w', encoding='utf-8') as f:
+        with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-        
+
         return html_path
-    
+
     def _generate_html(self) -> str:
         """
         生成HTML内容
-        
+
         Returns:
             HTML字符串
         """
@@ -188,7 +184,7 @@ class ReportGenerator:
     <div class="header">
         <h1>{self.title}</h1>
         <div class="meta">
-            <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
         </div>
     </div>
     
@@ -196,27 +192,29 @@ class ReportGenerator:
         <h3>Table of Contents</h3>
         <ul>
 """
-        
+
         # 添加目录
         for i, section in enumerate(self.sections):
-            html += f'            <li><a href="#section-{i}">{section["title"]}</a></li>\n'
-        
+            html += (
+                f'            <li><a href="#section-{i}">{section["title"]}</a></li>\n'
+            )
+
         html += """        </ul>
     </div>
 """
-        
+
         # 添加章节
         for i, section in enumerate(self.sections):
             html += f"""
     <div class="section" id="section-{i}">
-        <h2>{section['title']}</h2>
-        {section['content']}
+        <h2>{section["title"]}</h2>
+        {section["content"]}
 """
-            
+
             # 添加图片
-            if section['images']:
+            if section["images"]:
                 html += '        <div class="image-grid">\n'
-                for img_path in section['images']:
+                for img_path in section["images"]:
                     img_name = os.path.basename(img_path)
                     html += f"""
             <div class="image-container">
@@ -224,15 +222,18 @@ class ReportGenerator:
                 <div class="image-caption">{img_name}</div>
             </div>
 """
-                html += '        </div>\n'
-            
-            html += '    </div>\n'
-        
-        html += """
+                html += "        </div>\n"
+
+            html += "    </div>\n"
+
+        html += (
+            """
     <div class="section">
         <h2>Configuration</h2>
         <p>Analysis configuration used for this report:</p>
-""" + self._format_config() + """
+"""
+            + self._format_config()
+            + """
     </div>
     
     <footer style="text-align: center; margin-top: 30px; color: #666;">
@@ -241,44 +242,45 @@ class ReportGenerator:
 </body>
 </html>
 """
-        
+        )
+
         return html
-    
+
     def _format_config(self) -> str:
         """
         格式化配置信息
-        
+
         Returns:
             HTML格式的配置信息
         """
         html = '<table class="stats-table">\n'
-        html += '<tr><th>Parameter</th><th>Value</th></tr>\n'
-        
+        html += "<tr><th>Parameter</th><th>Value</th></tr>\n"
+
         for key, value in self.config.items():
-            if key == 'save_dir':
+            if key == "save_dir":
                 continue  # 跳过保存目录
-            html += f'<tr><td>{key}</td><td>{value}</td></tr>\n'
-        
-        html += '</table>\n'
+            html += f"<tr><td>{key}</td><td>{value}</td></tr>\n"
+
+        html += "</table>\n"
         return html
-    
+
     def add_summary(self, stats: Dict[str, Any]):
         """
         添加统计摘要
-        
+
         Args:
             stats: 统计数据字典
         """
         content = "<p>Summary statistics:</p>\n"
         content += '<table class="stats-table">\n'
-        content += '<tr><th>Metric</th><th>Value</th></tr>\n'
-        
+        content += "<tr><th>Metric</th><th>Value</th></tr>\n"
+
         for key, value in stats.items():
             if isinstance(value, (int, float)):
-                content += f'<tr><td>{key}</td><td>{value:.4f}</td></tr>\n'
+                content += f"<tr><td>{key}</td><td>{value:.4f}</td></tr>\n"
             else:
-                content += f'<tr><td>{key}</td><td>{value}</td></tr>\n'
-        
-        content += '</table>\n'
-        
+                content += f"<tr><td>{key}</td><td>{value}</td></tr>\n"
+
+        content += "</table>\n"
+
         self.add_section("Summary", content)

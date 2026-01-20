@@ -124,8 +124,8 @@ python src/cli.py --config config.yaml --data.source hf:wikitext
 To add support for a new model, create a new adapter in `src/models/`:
 
 ```python
-from src.models.base import BaseModelAdapter
-from src.core.registry import ModelRegistry
+from models.base import BaseModelAdapter
+from core.registry import ModelRegistry
 
 @ModelRegistry.register("your_model")
 class YourModelAdapter(BaseModelAdapter):

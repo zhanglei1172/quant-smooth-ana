@@ -5,19 +5,19 @@ CLI - 命令行入口
 """
 
 import argparse
-import sys
 import os
+import sys
 from typing import Optional
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.utils.config import ConfigLoader
-from src.core.registry import ModelRegistry
-from src.core.layer_matcher import LayerMatcher
-from src.core.memory_manager import AutoMemoryManager
-from src.models.llama import LlamaAdapter
-from src.models.qwen import QwenAdapter
+from core.layer_matcher import LayerMatcher
+from core.memory_manager import AutoMemoryManager
+from core.registry import ModelRegistry
+from models.llama import LlamaAdapter
+from models.qwen import QwenAdapter
+from utils.config import ConfigLoader
 
 
 def parse_args():
@@ -163,9 +163,9 @@ def load_data(config: dict, tokenizer):
     Returns:
         数据加载器
     """
-    from src.data.builtin_datasets import get_builtin_dataloader
-    from src.data.custom_datasets import CustomDataLoader
-    from src.data.hf_datasets import get_hf_dataloader
+    from data.builtin_datasets import get_builtin_dataloader
+    from data.custom_datasets import CustomDataLoader
+    from data.hf_datasets import get_hf_dataloader
     
     data_config = config.get('data', {})
     source = data_config.get('source', 'pile')
@@ -241,8 +241,8 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     )
     
     # 运行统计计算
-    from src.statistics.magnitude import MagnitudeCalculator
-    from src.statistics.outlier import OutlierCalculator
+    from statistics.magnitude import MagnitudeCalculator
+    from statistics.outlier import OutlierCalculator
     
     magnitude_calc = MagnitudeCalculator(adapter, layer_matcher, memory_manager)
     outlier_calc = OutlierCalculator(adapter, layer_matcher, memory_manager)
@@ -286,9 +286,9 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         print(f"  Layer-wise count: {stats.shape}")
     
     # 生成可视化
-    from src.visualization.magnitude_plot import MagnitudeVisualizer
-    from src.visualization.outlier_plot import OutlierVisualizer
-    from src.visualization.report_generator import ReportGenerator
+    from visualization.magnitude_plot import MagnitudeVisualizer
+    from visualization.outlier_plot import OutlierVisualizer
+    from visualization.report_generator import ReportGenerator
     
     print("Generating visualizations...")
     
@@ -306,7 +306,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     # 导出数据
     output_config = config.get('visualization', {}).get('output', {})
     if 'csv' in output_config.get('formats', []):
-        from src.utils.export import DataExporter
+        from utils.export import DataExporter
         exporter = DataExporter(viz_config.get('save_dir', './figures'))
         print("Exporting data...")
         # TODO: 导出统计数据

@@ -2,16 +2,16 @@
 
 # Model configuration
 model:
-  path: "/path/to/your/model"
-  name: "model-name"
-  family: "llama"  # llama, qwen, mistral, etc.
+  path: "/dataset/workspace/zhangl98/models/Qwen3-0.6B/"
+  name: "Qwen3-0.6B"
+  family: "qwen"  # llama, qwen, mistral, etc.
   hf_token: null
 
 # Data configuration
 data:
   source: "pile"  # pile, wikitext2, c4, redpajama, hf:dataset_name, custom:/path/to/file
-  num_samples: 64
-  seq_len: 1024
+  num_samples: 1
+  seq_len: 256
   seed: 0
   # Custom dataset configuration
   custom:
@@ -40,12 +40,12 @@ visualization:
   enabled:
     magnitude_input: true
     magnitude_output: true
-    magnitude_weight: false
+    magnitude_weight: true
     outlier_layer_wise: true
     outlier_position: true
     outlier_token: true
-    heatmap_3d: false
-    distribution: false
+    heatmap_3d: true
+    distribution: true
   
   # Magnitude configuration
   magnitude:
@@ -54,13 +54,13 @@ visualization:
       - o_proj
       - down_proj
       - up_proj
-    reduce_dim: null
+    reduce_dim: null # -1 for in-channel(cross token), -2 for token
     combined_plot: true
   
   # Outlier configuration
   outlier:
     threshold: 64  # Outlier threshold (relative to median)
-    component_type: "hidden_state"  # Component to analyze
+    component_type: "down_proj"  # Component to analyze
     decode_tokens: true  # Whether to decode token content
   
   # Layer selection (supports regex)

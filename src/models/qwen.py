@@ -5,8 +5,8 @@ Qwen Adapter - Qwen模型适配器
 """
 
 from typing import List, Optional
-from .base import BaseModelAdapter
-from ..core.registry import ModelRegistry
+from core.registry import ModelRegistry
+from models.base import BaseModelAdapter
 
 
 @ModelRegistry.register("qwen")

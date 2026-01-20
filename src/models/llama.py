@@ -5,8 +5,8 @@ Llama Adapter - LLaMA模型适配器
 """
 
 from typing import List, Optional
-from .base import BaseModelAdapter
-from ..core.registry import ModelRegistry
+from core.registry import ModelRegistry
+from models.base import BaseModelAdapter
 
 
 @ModelRegistry.register("llama")
@@ -53,7 +53,6 @@ class LlamaAdapter(BaseModelAdapter):
             'gate_proj': r'mlp\.gate_proj',
             'up_proj': r'mlp\.up_proj',
             'down_proj': r'mlp\.down_proj',
-            'hidden_state': r'$'  # 整个layer的输出
         }
         return patterns.get(component_type)
     

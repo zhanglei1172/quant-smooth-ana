@@ -1,18 +1,20 @@
 """
 Base Stat Calculator - 统计计算器基类
 
-定义统计计算器的标准接口
+提供统计计算的基类和通用方法
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Dict
+from typing import Any, Dict, List
+
+import torch
 
 
 class BaseStatCalculator(ABC):
     """
     统计计算器基类
     
-    所有统计计算器都应该继承这个基类，并实现calculate方法
+    所有统计计算器都应该继承这个类
     """
     
     def __init__(self, model_adapter, layer_matcher, memory_manager):
@@ -38,7 +40,7 @@ class BaseStatCalculator(ABC):
             **kwargs: 其他参数
             
         Returns:
-            统计结果，格式由具体实现决定
+            统计结果
         """
         pass
     
@@ -58,25 +60,22 @@ class BaseStatCalculator(ABC):
         
         Args:
             input_data: 输入数据
-            layer_names: 要收集的layer名称列表
-            is_input: True收集输入激活，False收集输出激活
+            layer_names: 需要收集激活值的layer名称列表
+            is_input: True收集输入，False收集输出
             
         Returns:
-            激活值字典 {layer_name: activation_tensor}
+            激活值字典 {layer_name: activation}
         """
-        import torch
-        
         activation_dict = {}
         hooks = []
         
         def make_hook(layer_name, is_input):
             def hook(module, input, output):
                 if is_input:
-                    if isinstance(input, tuple):
-                        activation_dict[layer_name] = input[0].detach().cpu()
-                    else:
-                        activation_dict[layer_name] = input.detach().cpu()
+                    activation_dict[layer_name] = input[0].detach().cpu()
                 else:
+                    if isinstance(output, tuple):
+                        output = output[0]
                     activation_dict[layer_name] = output.detach().cpu()
             return hook
         
@@ -90,7 +89,16 @@ class BaseStatCalculator(ABC):
         
         # 前向传播
         with torch.no_grad():
-            self.adapter.model(input_data.to(self.memory_manager.device))
+            # 获取embedding层的设备
+            embeddings = self.adapter.get_embeddings()
+            if embeddings and len(embeddings) > 0:
+                embed_device = next(embeddings[0].parameters()).device
+                # 将输入数据移动到embedding层的设备
+                input_data = input_data.to(embed_device)
+            
+            # 让模型自己处理设备映射
+            # 禁用KV缓存以避免旋转位置编码问题
+            _ = self.adapter.model(input_data, use_cache=False)
         
         # 移除hooks
         for hook in hooks:

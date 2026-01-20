@@ -75,7 +75,14 @@ class OutlierVisualizer(BaseVisualizer):
         values = list(sorted_percentages.values())
         
         fig, ax = plt.subplots(figsize=(7.5, 4.5), dpi=self.dpi)
-        bars = ax.bar(labels, values, color="cornflowerblue")
+        
+        # 使用数值索引作为x轴
+        x_indices = np.arange(len(labels))
+        bars = ax.bar(x_indices, values, color="cornflowerblue")
+        
+        # 设置x轴标签
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(labels)
         
         for bar in bars:
             height = bar.get_height()

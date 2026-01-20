@@ -79,7 +79,7 @@ class BaseModelAdapter(ABC):
             组件类型列表
         """
         return ['q_proj', 'k_proj', 'v_proj', 'o_proj', 
-                'gate_proj', 'up_proj', 'down_proj', 'hidden_state']
+                'gate_proj', 'up_proj', 'down_proj']
     
     def get_model_family(self) -> str:
         """

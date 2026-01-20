@@ -140,8 +140,15 @@ def load_model(config: dict):
         model_path,
         trust_remote_code=True,
         torch_dtype='auto',
-        device_map='auto'
+        device_map='auto'  # 改为 'cuda:0'
     )
+    
+    # 打印模型配置
+    print(f"Model config: max_position_embeddings={model.config.max_position_embeddings}")
+    print(f"Model vocab size: {model.config.vocab_size}")
+    
+    # 打印模型设备映射
+    print(f"Model device map: {model.hf_device_map}")
     
     # 设置pad_token
     if tokenizer.pad_token is None:
@@ -232,6 +239,13 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     # 创建layer匹配器
     layer_matcher = LayerMatcher(adapter)
     
+    # 调试：打印所有layer名称
+    all_layers = layer_matcher._get_all_layer_names()
+    print(f"\nTotal layers found: {len(all_layers)}")
+    print("First 20 layer names:")
+    for name in all_layers[:20]:
+        print(f"  {name}")
+    
     # 创建显存管理器
     memory_config = config.get('memory', {})
     memory_manager = AutoMemoryManager(
@@ -251,16 +265,23 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     viz_config = config.get('visualization', {})
     magnitude_config = viz_config.get('magnitude', {})
     
+    # 存储所有统计数据用于可视化
+    magnitude_stats = {}
+    weight_stats = {}
+    distribution_stats = {}
+    heatmap_stats = {}
+    
     if viz_config.get('enabled', {}).get('magnitude_input', False):
         print("Computing magnitude statistics (input)...")
         for component in magnitude_config.get('components', ['down_proj']):
             stats = magnitude_calc.calculate(
                 dataloader,
                 component_type=component,
-                per_tensor=magnitude_config.get('per_tensor', False),
+                reduce_dim=magnitude_config.get('reduce_dim'),
                 is_input=True
             )
             print(f"  {component}: {stats.shape}")
+            magnitude_stats[f'{component}_input'] = stats
     
     if viz_config.get('enabled', {}).get('magnitude_output', False):
         print("Computing magnitude statistics (output)...")
@@ -268,22 +289,89 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
             stats = magnitude_calc.calculate(
                 dataloader,
                 component_type=component,
-                per_tensor=magnitude_config.get('per_tensor', False),
+                reduce_dim=magnitude_config.get('reduce_dim'),
                 is_input=False
             )
             print(f"  {component}: {stats.shape}")
+            magnitude_stats[f'{component}_output'] = stats
+    
+    # 计算权重magnitude统计
+    if viz_config.get('enabled', {}).get('magnitude_weight', False):
+        print("Computing weight magnitude statistics...")
+        weight_components = magnitude_config.get('weight', {}).get('components', magnitude_config.get('components', ['down_proj']))
+        for component in weight_components:
+            try:
+                stats = magnitude_calc.calculate_weight(component_type=component)
+                print(f"  {component}: {stats.shape}")
+                weight_stats[component] = stats
+            except Exception as e:
+                print(f"  Warning: Could not calculate weight stats for {component}: {e}")
     
     # 计算outlier统计
     outlier_config = viz_config.get('outlier', {})
+    outlier_stats = {}
     
     if viz_config.get('enabled', {}).get('outlier_layer_wise', False):
         print("Computing outlier statistics...")
         stats = outlier_calc.calculate_layer_wise_count(
             dataloader,
-            component_type=outlier_config.get('component_type', 'hidden_state'),
+            component_type=outlier_config.get('component_type', 'down_proj'),
             outlier_threshold=outlier_config.get('threshold', 64)
         )
         print(f"  Layer-wise count: {stats.shape}")
+        outlier_stats['layer_wise_count'] = stats
+    
+    if viz_config.get('enabled', {}).get('outlier_position', False):
+        print("Computing outlier token positions...")
+        positions = outlier_calc.calculate_token_position(
+            dataloader,
+            component_type=outlier_config.get('component_type', 'down_proj'),
+            outlier_threshold=outlier_config.get('threshold', 20)
+        )
+        print(f"  Token positions: {len(positions)} tokens")
+        outlier_stats['token_position'] = positions
+    
+    if viz_config.get('enabled', {}).get('outlier_token', False):
+        print("Computing outlier token content...")
+        token_content = outlier_calc.calculate_token_content(
+            dataloader,
+            component_type=outlier_config.get('component_type', 'down_proj'),
+            outlier_threshold=outlier_config.get('threshold', 20),
+            tokenizer=tokenizer
+        )
+        print(f"  Token content: {len(token_content.get('decoded_tokens', {}))} unique tokens")
+        outlier_stats['token_content'] = token_content
+    
+    # 计算distribution统计
+    if viz_config.get('enabled', {}).get('distribution', False):
+        print("Computing distribution statistics...")
+        distribution_config = viz_config.get('distribution', {})
+        distribution_components = distribution_config.get('components', magnitude_config.get('components', ['down_proj']))
+        for component in distribution_components:
+            try:
+                stats = magnitude_calc.calculate_distribution(
+                    dataloader,
+                    component_type=component,
+                    is_input=distribution_config.get('is_input', True)
+                )
+                print(f"  {component}: {len(stats['values'])} layers")
+                distribution_stats[component] = stats
+            except Exception as e:
+                print(f"  Warning: Could not calculate distribution for {component}: {e}")
+    
+    # 计算heatmap_3d统计
+    if viz_config.get('enabled', {}).get('heatmap_3d', False):
+        print("Computing heatmap data...")
+        heatmap_config = viz_config.get('heatmap_3d', {})
+        heatmap_data = magnitude_calc.calculate_heatmap_data(
+            dataloader,
+            component_type=heatmap_config.get('component_type', 'down_proj'),
+            sample_idx=heatmap_config.get('sample_idx', 0),
+            is_input=heatmap_config.get('is_input', False)
+        )
+        print(f"  Heatmap shape: {heatmap_data.shape}")
+        heatmap_stats['data'] = heatmap_data
+        heatmap_stats['component_type'] = heatmap_config.get('component_type', 'down_proj')
     
     # 生成可视化
     from visualization.magnitude_plot import MagnitudeVisualizer
@@ -292,12 +380,187 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     
     print("Generating visualizations...")
     
-    magnitude_viz = MagnitudeVisualizer(config)
-    outlier_viz = OutlierVisualizer(config)
+    magnitude_viz = MagnitudeVisualizer(viz_config)
+    outlier_viz = OutlierVisualizer(viz_config)
+    
+    # 生成magnitude可视化
+    magnitude_figures = []
+    for key, stats in magnitude_stats.items():
+        component, plot_type = key.rsplit('_', 1)
+        layer_names = layer_matcher.match_by_component(component)
+        figure = magnitude_viz.visualize(
+            stats_data=stats,
+            layer_names=layer_names,
+            plot_type=plot_type,
+            component_type=component
+        )
+        if figure:
+            magnitude_figures.append(figure)
+            print(f"  Generated magnitude plot: {figure}")
+    
+    # 生成权重magnitude可视化
+    weight_figures = []
+    for component, stats in weight_stats.items():
+        layer_names = layer_matcher.match_by_component(component)
+        figure = magnitude_viz.visualize_weight(
+            stats_data=stats,
+            layer_names=layer_names,
+            component_type=component
+        )
+        if figure:
+            weight_figures.append(figure)
+            print(f"  Generated weight magnitude plot: {figure}")
+    
+    # 生成distribution可视化
+    distribution_figures = []
+    if distribution_stats:
+        from visualization.distribution_plot import DistributionVisualizer
+        distribution_viz = DistributionVisualizer(viz_config)
+        
+        distribution_config = viz_config.get('distribution', {})
+        plot_types = distribution_config.get('plot_types', ['boxplot'])
+        
+        for component, stats in distribution_stats.items():
+            layer_names = layer_matcher.match_by_component(component)
+            
+            if 'boxplot' in plot_types:
+                figure = distribution_viz.visualize_boxplot(
+                    stats=stats,
+                    layer_names=layer_names,
+                    component_type=component
+                )
+                if figure:
+                    distribution_figures.append(figure)
+                    print(f"  Generated distribution boxplot: {figure}")
+            
+            if 'histogram' in plot_types:
+                figure = distribution_viz.visualize_histogram(
+                    stats=stats,
+                    layer_names=layer_names,
+                    component_type=component,
+                    num_layers_to_show=distribution_config.get('num_layers_to_show', 4)
+                )
+                if figure:
+                    distribution_figures.append(figure)
+                    print(f"  Generated distribution histogram: {figure}")
+    
+    # 生成heatmap_3d可视化
+    heatmap_figures = []
+    if heatmap_stats:
+        from visualization.heatmap_3d import Heatmap3DVisualizer
+        heatmap_viz = Heatmap3DVisualizer(viz_config)
+        
+        heatmap_config = viz_config.get('heatmap_3d', {})
+        component_type = heatmap_stats.get('component_type', 'down_proj')
+        layer_names = layer_matcher.match_by_component(component_type)
+        
+        # 3D热力图
+        figure = heatmap_viz.visualize_3d_heatmap(
+            data=heatmap_stats['data'],
+            layer_names=layer_names,
+            component_type=component_type,
+            view_angle=tuple(heatmap_config.get('view_angle', [30, 45]))
+        )
+        if figure:
+            heatmap_figures.append(figure)
+            print(f"  Generated 3D heatmap: {figure}")
+        
+        # 2D热力图（显示前几层）
+        num_2d_layers = heatmap_config.get('num_2d_layers', 2)
+        for layer_idx in range(min(num_2d_layers, heatmap_stats['data'].shape[0])):
+            figure = heatmap_viz.visualize_2d_heatmap(
+                data=heatmap_stats['data'],
+                layer_names=layer_names,
+                component_type=component_type,
+                layer_idx=layer_idx
+            )
+            if figure:
+                heatmap_figures.append(figure)
+                print(f"  Generated 2D heatmap layer {layer_idx}: {figure}")
+    
+    # 生成outlier可视化
+    outlier_figures = []
+    if 'layer_wise_count' in outlier_stats:
+        figure = outlier_viz.visualize_layer_wise_count(
+            stats=outlier_stats['layer_wise_count'],
+            layer_names=layer_matcher.match_by_component(outlier_config.get('component_type', 'down_proj'))
+        )
+        if figure:
+            outlier_figures.append(figure)
+            print(f"  Generated outlier layer-wise plot: {figure}")
+    
+    if 'token_position' in outlier_stats:
+        figure = outlier_viz.visualize_token_position(
+            position_stats=outlier_stats['token_position']
+        )
+        if figure:
+            outlier_figures.append(figure)
+            print(f"  Generated outlier position plot: {figure}")
+    
+    if 'token_content' in outlier_stats:
+        figure = outlier_viz.visualize_token_content(
+            token_content=outlier_stats['token_content'],
+            top_n=outlier_config.get('top_n', 10)
+        )
+        if figure:
+            outlier_figures.append(figure)
+            print(f"  Generated outlier token plot: {figure}")
     
     # 生成报告
-    report_gen = ReportGenerator(config)
-    report_gen.add_section("Analysis Summary", "<p>Outlier analysis completed successfully.</p>")
+    report_gen = ReportGenerator(viz_config)
+    
+    # 添加摘要
+    summary = f"""
+    <h2>Analysis Summary</h2>
+    <p>Outlier analysis completed successfully.</p>
+    <ul>
+        <li>Model: {config.get('model', {}).get('name', 'unknown')}</li>
+        <li>Dataset: {config.get('data', {}).get('source', 'unknown')}</li>
+        <li>Number of samples: {config.get('data', {}).get('num_samples', 0)}</li>
+        <li>Sequence length: {config.get('data', {}).get('seq_len', 0)}</li>
+    </ul>
+    """
+    report_gen.add_section("Analysis Summary", summary)
+    
+    # 添加magnitude图表
+    if magnitude_figures:
+        magnitude_html = "<h2>Magnitude Analysis</h2>"
+        for fig in magnitude_figures:
+            fig_name = fig.split('/')[-1]
+            magnitude_html += f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+        report_gen.add_section("Magnitude Analysis", magnitude_html)
+    
+    # 添加权重magnitude图表
+    if weight_figures:
+        weight_html = "<h2>Weight Magnitude Analysis</h2>"
+        for fig in weight_figures:
+            fig_name = fig.split('/')[-1]
+            weight_html += f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+        report_gen.add_section("Weight Magnitude Analysis", weight_html)
+    
+    # 添加distribution图表
+    if distribution_figures:
+        distribution_html = "<h2>Distribution Analysis</h2>"
+        for fig in distribution_figures:
+            fig_name = fig.split('/')[-1]
+            distribution_html += f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+        report_gen.add_section("Distribution Analysis", distribution_html)
+    
+    # 添加heatmap图表
+    if heatmap_figures:
+        heatmap_html = "<h2>Heatmap Analysis</h2>"
+        for fig in heatmap_figures:
+            fig_name = fig.split('/')[-1]
+            heatmap_html += f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+        report_gen.add_section("Heatmap Analysis", heatmap_html)
+    
+    # 添加outlier图表
+    if outlier_figures:
+        outlier_html = "<h2>Outlier Analysis</h2>"
+        for fig in outlier_figures:
+            fig_name = fig.split('/')[-1]
+            outlier_html += f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+        report_gen.add_section("Outlier Analysis", outlier_html)
     
     # 保存报告
     report_path = report_gen.generate()

@@ -33,7 +33,7 @@ class BaseVisualizer(ABC):
         # 创建保存目录
         os.makedirs(self.save_dir, exist_ok=True)
     
-    @abstractmethod
+    # @abstractmethod
     def visualize(self, data: Any, **kwargs) -> Optional[str]:
         """
         可视化数据

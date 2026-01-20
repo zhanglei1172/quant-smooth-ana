@@ -4,9 +4,11 @@ Outlier Calculator - Outlier统计计算器
 计算outlier token的统计指标（数量、位置、内容）
 """
 
-import torch
+from typing import Any, Dict, List
+
 import numpy as np
-from typing import List, Dict, Any
+import torch
+
 from .base import BaseStatCalculator
 
 
@@ -19,6 +21,23 @@ class OutlierCalculator(BaseStatCalculator):
     - outlier token的位置分布
     - outlier token的内容
     """
+    
+    def calculate(self, dataloader, component_type='hidden_state',
+                  outlier_threshold=64, tokenizer=None, **kwargs) -> Dict[str, Any]:
+        """
+        计算outlier统计（默认方法，调用calculate_all）
+        
+        Args:
+            dataloader: 数据加载器
+            component_type: 组件类型
+            outlier_threshold: outlier阈值
+            tokenizer: 分词器
+            **kwargs: 其他参数
+            
+        Returns:
+            results: 包含所有统计指标的字典
+        """
+        return self.calculate_all(dataloader, component_type, outlier_threshold, tokenizer, **kwargs)
     
     def calculate_layer_wise_count(self, dataloader, component_type='hidden_state',
                                    outlier_threshold=64, **kwargs) -> np.ndarray:
@@ -45,7 +64,7 @@ class OutlierCalculator(BaseStatCalculator):
         num_samples = len(dataloader)
         
         for data in dataloader:
-            input_data = data[0]
+            input_data = data[0].reshape(1, -1)
             activation_dict = self._collect_activations(input_data, layer_names, is_input=False)
             
             sample_stats = np.zeros((1, num_layers))
@@ -91,7 +110,7 @@ class OutlierCalculator(BaseStatCalculator):
         layer_names = self.matcher.match_by_component(component_type)
         
         for data in dataloader:
-            input_data = data[0]
+            input_data = data[0].reshape(1, -1)
             activation_dict = self._collect_activations(input_data, layer_names, is_input=False)
             
             for layer_name in layer_names:
@@ -135,7 +154,7 @@ class OutlierCalculator(BaseStatCalculator):
         layer_names = self.matcher.match_by_component(component_type)
         
         for data in dataloader:
-            input_data = data[0]
+            input_data = data[0].reshape(1, -1)
             activation_dict = self._collect_activations(input_data, layer_names, is_input=False)
             
             for layer_name in layer_names:
@@ -160,7 +179,9 @@ class OutlierCalculator(BaseStatCalculator):
                 
                 # 统计token
                 for idx in outlier_indices:
-                    token_id = input_data[idx].item()
+                    # 将flatten后的索引转换为序列位置
+                    seq_pos = idx.item() // activation_abs.shape[-1]
+                    token_id = input_data[0, seq_pos].item()
                     if token_id not in token_counts:
                         token_counts[token_id] = 0
                     token_counts[token_id] += 1

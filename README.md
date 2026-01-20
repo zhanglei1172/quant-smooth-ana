@@ -53,7 +53,7 @@ visualization:
       - o_proj
       - down_proj
       - up_proj
-    per_tensor: false
+    reduce_dim: null
   
   outlier:
     threshold: 64

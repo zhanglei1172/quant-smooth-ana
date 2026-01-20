@@ -1,11 +1,12 @@
+"""
 Layer Matcher - Layer名称正则匹配系统
 
 这个模块提供了灵活的layer名称匹配功能，支持正则表达式、组件类型、范围等多种匹配方式。
 """
 
 import re
-from typing import List, Optional, Union
 from abc import ABC, abstractmethod
+from typing import List, Optional, Union
 
 
 class LayerMatcher:
@@ -36,9 +37,6 @@ class LayerMatcher:
         
         Args:
             pattern: 正则表达式模式，例如：
-                - r'layers\.\d+\.mlp\.down_proj'  # 所有down_proj层
-                - r'layers\.[0-9]$'  # 0-9层的所有组件
-                - r'layers\.(?:0|5|10)\.self_attn'  # 第0、5、10层的attention
                 
         Returns:
             匹配的layer名称列表，按字母顺序排序
@@ -50,9 +48,10 @@ class LayerMatcher:
             self._compiled_patterns[pattern] = re.compile(pattern)
         
         compiled_pattern = self._compiled_patterns[pattern]
-        matched = [name for name in all_layer_names if compiled_pattern.match(name)]
+        matched = [name for name in all_layer_names if compiled_pattern.search(name)]
         
-        return sorted(matched)
+        # 按层索引排序
+        return self._sort_by_layer_index(matched)
     
     def match_by_component(self, component_type: str, 
                           layer_indices: Optional[Union[List[int], str]] = None) -> List[str]:
@@ -78,16 +77,21 @@ class LayerMatcher:
         # 处理layer_indices参数
         if layer_indices is None or layer_indices == "all":
             # 匹配所有层
-            return self.match_layers(pattern)
-        
-        # 匹配指定的层
-        if isinstance(layer_indices, list):
+            matched = self.match_layers(pattern)
+        elif isinstance(layer_indices, list):
             layer_pattern = '|'.join(map(str, layer_indices))
             # 替换 \d+ 为指定的层索引
             pattern = pattern.replace(r'\d+', f'({layer_pattern})')
-            return self.match_layers(pattern)
+            matched = self.match_layers(pattern)
+        else:
+            raise ValueError(f"Invalid layer_indices: {layer_indices}")
         
-        raise ValueError(f"Invalid layer_indices: {layer_indices}")
+        # 如果有选择的layer，进行过滤
+        if hasattr(self, '_selected_layers') and self._selected_layers is not None:
+            selected_set = set(self._selected_layers)
+            matched = [layer for layer in matched if layer in selected_set]
+        
+        return matched
     
     def match_by_range(self, component_type: str, start: int, end: int) -> List[str]:
         """
@@ -172,6 +176,25 @@ class LayerMatcher:
                     self._all_layer_names.append(name)
         
         return self._all_layer_names
+    
+    def _sort_by_layer_index(self, layer_names: List[str]) -> List[str]:
+        """
+        按层索引排序layer名称
+        
+        Args:
+            layer_names: layer名称列表
+            
+        Returns:
+            按层索引排序的layer名称列表
+        """
+        def extract_index(name):
+            # 提取层索引
+            match = re.search(r'(?:layers|model\.layers|language_model\.model\.layers)\.(\d+)', name)
+            if match:
+                return int(match.group(1))
+            return 0
+        
+        return sorted(layer_names, key=extract_index)
     
     def get_matching_info(self, pattern: str) -> dict:
         """

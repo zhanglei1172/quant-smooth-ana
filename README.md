@@ -1,178 +1,294 @@
 # Quant Smooth Ana
 
-A modular and extensible tool for visualizing model outlier statistics and distributions.
+一个模块化、可扩展的模型激活值统计分析与可视化工具，用于分析大语言模型中的 outlier 分布、magnitude 统计等。
 
-## Features
+## 特性
 
-- **Modular Architecture**: Plugin-based design for easy model extension
-- **Automatic Memory Management**: Dynamic GPU/CPU offload for optimal memory usage
-- **Flexible Layer Matching**: Regex-based layer name matching
-- **Multiple Data Sources**: Built-in datasets, custom files, and HuggingFace datasets
-- **Rich Visualizations**: Magnitude plots, outlier analysis, 3D heatmaps
-- **Comprehensive Reports**: HTML reports with all visualizations
-- **Data Export**: CSV and JSON export formats
+- **无需模型适配器**：直接传入任意 PyTorch 模型实例，通过正则表达式匹配任意层
+- **灵活的层选择**：统一使用正则表达式匹配模型层，支持任意模型架构
+- **自动显存管理**：动态 GPU/CPU offload，优化显存使用
+- **多种数据源**：内置数据集、自定义文件、HuggingFace 数据集
+- **丰富的可视化**：Magnitude 图、Outlier 分析、3D 热力图、分布图
+- **完整的报告**：自动生成包含所有可视化的 HTML 报告
+- **数据导出**：支持 CSV 和 JSON 格式导出
 
-## Installation
+## 安装
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Quick Start
+## 快速开始
 
-### 1. Create a configuration file
+### 1. 创建配置文件
 
-Create a YAML configuration file (e.g., `configs/llama.yaml`):
+创建 YAML 配置文件（例如 `configs/my_model.yaml`）：
 
 ```yaml
+# 模型配置
 model:
   path: "/path/to/your/model"
-  name: "llama-2-7b"
-  family: "llama"
+  name: "my-model"
 
+# 数据配置
 data:
-  source: "pile"  # or custom:/path/to/file.txt
+  source: "pile"  # 或 custom:/path/to/file.txt
   num_samples: 64
   seq_len: 1024
   seed: 0
 
+# 可视化配置
 visualization:
   save_dir: "./figures"
   dpi: 200
   
+  # 启用的可视化
   enabled:
     magnitude_input: true
     magnitude_output: true
+    magnitude_weight: false
     outlier_layer_wise: true
     outlier_position: true
     outlier_token: true
+    heatmap_3d: false
+    distribution: false
   
+  # Magnitude 配置 - 使用正则表达式匹配层
   magnitude:
-    components:
-      - q_proj
-      - o_proj
-      - down_proj
-      - up_proj
+    patterns:
+      - "mlp\\.down_proj"      # 匹配所有 down_proj 层
+      - "mlp\\.up_proj"        # 匹配所有 up_proj 层
+      - "self_attn\\.q_proj"   # 匹配所有 q_proj 层
+      - "self_attn\\.o_proj"   # 匹配所有 o_proj 层
     reduce_dim: null
   
+  # Outlier 配置 - 使用正则表达式匹配层
   outlier:
     threshold: 64
-    component_type: "hidden_state"
+    pattern: "layers\\.\\d+$"  # 匹配 transformer 层输出
     decode_tokens: true
   
-  output:
-    formats: ["png", "html", "csv", "json"]
-    report_name: "analysis_report"
+  # 层选择（可选）- 过滤要分析的层
+  layer_selection:
+    patterns:
+      - "layers\\.\\d+\\.mlp\\.down_proj"
+      - "layers\\.\\d+\\.self_attn\\.q_proj"
 
+# 显存配置
 memory:
   device: "cuda"
   offload_device: "cpu"
   auto_offload: true
 ```
 
-### 2. Run analysis
+### 2. 运行分析
 
 ```bash
-python src/cli.py --config configs/llama.yaml
+python src/cli.py --config configs/my_model.yaml
 ```
 
-### 3. Override configuration parameters
+### 3. 覆盖配置参数
 
 ```bash
-python src/cli.py --config configs/llama.yaml --data.num_samples 128 --outlier.threshold 100
+python src/cli.py --config configs/my_model.yaml --data.num_samples 128 --outlier.threshold 100
 ```
 
-## Supported Models
+## 正则表达式匹配
 
-- LLaMA / LLaMA-2 / LLaMA-3
-- Qwen / Qwen2 / Qwen2.5-VL
-- Mistral
-- Gemma
-- InternLM
-- Phi
+本工具使用正则表达式来匹配模型层，这使得它能够支持任意模型架构。
 
-## Data Sources
+### 常用正则表达式示例
 
-### Built-in Datasets
+```yaml
+# 匹配所有 down_proj 层
+patterns:
+  - "mlp\\.down_proj"
 
-- `pile`: Pile dataset
-- `wikitext2`: WikiText-2 dataset
-- `c4`: C4 dataset
-- `redpajama`: RedPajama dataset
+# 只匹配特定层索引（0, 5, 10, 15）
+patterns:
+  - "layers\\.(0|5|10|15)\\.mlp\\.down_proj"
 
-### Custom Datasets
+# 匹配 0-9 层的所有 MLP 层
+patterns:
+  - "layers\\.[0-9]\\.mlp"
+
+# 匹配整个 transformer 层输出
+patterns:
+  - "layers\\.\\d+$"
+
+# VL 模型的语言模型部分
+patterns:
+  - "language_model\\.model\\.layers\\.\\d+\\.mlp"
+```
+
+### 查看模型所有层
+
+运行分析时，工具会打印模型的前 20 个层名称，帮助你编写正则表达式：
+
+```
+Total layers found: 224
+Showing first 20 layers:
+  model.embed_tokens
+  model.layers.0.self_attn.q_proj
+  model.layers.0.self_attn.k_proj
+  ...
+```
+
+## 数据源
+
+### 内置数据集
+
+- `pile`: Pile 数据集
+- `wikitext2`: WikiText-2 数据集
+- `c4`: C4 数据集
+- `redpajama`: RedPajama 数据集
+
+### 自定义数据集
 
 ```bash
-# Text file
+# 文本文件
 python src/cli.py --config config.yaml --data.source custom:/path/to/data.txt
 
-# JSON file
-python src/cli.py --config config.yaml --data.source custom:/path/to/data.json --data.custom.format json --data.custom.text_column text
+# JSON 文件
+python src/cli.py --config config.yaml --data.source custom:/path/to/data.json \
+    --data.custom.format json --data.custom.text_column text
 
-# CSV file
-python src/cli.py --config config.yaml --data.source custom:/path/to/data.csv --data.custom.format csv --data.custom.text_column content
+# CSV 文件
+python src/cli.py --config config.yaml --data.source custom:/path/to/data.csv \
+    --data.custom.format csv --data.custom.text_column content
 ```
 
-### HuggingFace Datasets
+### HuggingFace 数据集
 
 ```bash
 python src/cli.py --config config.yaml --data.source hf:wikitext
 ```
 
-## Adding New Models
+## 可视化类型
 
-To add support for a new model, create a new adapter in `src/models/`:
+### Magnitude 分析
 
-```python
-from models.base import BaseModelAdapter
-from core.registry import ModelRegistry
+分析模型各层激活值的 magnitude 统计（Top-1/2/3, Median, Min）：
 
-@ModelRegistry.register("your_model")
-class YourModelAdapter(BaseModelAdapter):
-    def get_layers(self):
-        return self.model.model.layers
-    
-    def get_embeddings(self):
-        return [self.model.model.embed_tokens]
-    
-    def get_layer_name_pattern(self, component_type: str):
-        patterns = {
-            'q_proj': r'attention\.q_proj',
-            'k_proj': r'attention\.k_proj',
-            'v_proj': r'attention\.v_proj',
-            'o_proj': r'attention\.o_proj',
-            'gate_proj': r'mlp\.gate_proj',
-            'up_proj': r'mlp\.up_proj',
-            'down_proj': r'mlp\.down_proj',
-            'hidden_state': r'$'
-        }
-        return patterns.get(component_type)
-    
-    def get_full_layer_name(self, layer_idx: int, component_type: str):
-        if component_type == 'hidden_state':
-            return f'model.layers.{layer_idx}'
-        pattern = self.get_layer_name_pattern(component_type)
-        return f'model.layers.{layer_idx}.{pattern.replace(r"\.", ".")}'
+```yaml
+visualization:
+  enabled:
+    magnitude_input: true   # 输入激活值
+    magnitude_output: true  # 输出激活值
+    magnitude_weight: true  # 权重 magnitude
+  
+  magnitude:
+    patterns:
+      - "mlp\\.down_proj"
+      - "self_attn\\.q_proj"
+    reduce_dim: -1  # -1 跨 token，-2 跨 channel
 ```
 
-## Project Structure
+### Outlier 分析
+
+分析 outlier token 的数量、位置和内容：
+
+```yaml
+visualization:
+  enabled:
+    outlier_layer_wise: true  # 每层 outlier 数量
+    outlier_position: true    # outlier 位置分布
+    outlier_token: true       # outlier token 内容
+  
+  outlier:
+    threshold: 64              # outlier 阈值（相对于中位数的倍数）
+    pattern: "layers\\.\\d+$"  # 分析的层
+    decode_tokens: true        # 解码 token 内容
+```
+
+### 分布分析
+
+分析激活值的分布（箱线图、直方图）：
+
+```yaml
+visualization:
+  enabled:
+    distribution: true
+  
+  distribution:
+    patterns:
+      - "mlp\\.down_proj"
+    plot_types: ["boxplot", "histogram"]
+    is_input: true
+```
+
+### 3D 热力图
+
+可视化激活值的 3D 热力图：
+
+```yaml
+visualization:
+  enabled:
+    heatmap_3d: true
+  
+  heatmap_3d:
+    pattern: "layers\\.\\d+$"
+    sample_idx: 0
+    is_input: false
+    view_angle: [30, 45]
+```
+
+## 项目结构
 
 ```
 quant-smooth-ana/
-├── configs/                    # YAML configuration files
+├── configs/                    # YAML 配置文件
+│   ├── default.yaml           # 默认配置
+│   └── test.yaml              # 测试配置
 ├── src/
-│   ├── core/                  # Core modules
-│   │   ├── registry.py        # Model registry
-│   │   ├── layer_matcher.py   # Layer name matcher
-│   │   └── memory_manager.py  # Memory manager
-│   ├── models/                # Model adapters
-│   ├── statistics/            # Statistics calculators
-│   ├── visualization/         # Visualization modules
-│   ├── data/                  # Data loaders
-│   └── utils/                 # Utilities
+│   ├── cli.py                 # 命令行入口
+│   ├── core/                  # 核心模块
+│   │   ├── layer_matcher.py   # 层名称正则匹配器
+│   │   └── memory_manager.py  # 显存管理器
+│   ├── statistics/            # 统计计算器
+│   │   ├── base.py            # 基类
+│   │   ├── magnitude.py       # Magnitude 统计
+│   │   └── outlier.py         # Outlier 统计
+│   ├── visualization/         # 可视化模块
+│   │   ├── magnitude_plot.py  # Magnitude 可视化
+│   │   ├── outlier_plot.py    # Outlier 可视化
+│   │   ├── distribution_plot.py  # 分布可视化
+│   │   ├── heatmap_3d.py      # 3D 热力图
+│   │   └── report_generator.py   # HTML 报告生成
+│   ├── data/                  # 数据加载器
+│   │   ├── builtin_datasets.py   # 内置数据集
+│   │   ├── custom_datasets.py    # 自定义数据集
+│   │   └── hf_datasets.py        # HuggingFace 数据集
+│   └── utils/                 # 工具函数
+│       ├── config.py          # 配置加载器
+│       └── export.py          # 数据导出
+├── figures/                   # 输出目录
 ├── requirements.txt
 └── README.md
 ```
+
+## 输出
+
+分析完成后，会在 `save_dir` 目录下生成：
+
+- `*.png`: 各种可视化图表
+- `analysis_report.html`: 包含所有图表的 HTML 报告
+- `*.csv` / `*.json`: 导出的统计数据（如果启用）
+
+## 支持的模型
+
+由于使用正则表达式匹配层，本工具理论上支持任意 PyTorch 模型，包括但不限于：
+
+- LLaMA / LLaMA-2 / LLaMA-3
+- Qwen / Qwen2 / Qwen2.5 / Qwen2.5-VL
+- Mistral
+- Gemma
+- InternLM
+- Phi
+- DeepSeek
+- 以及其他基于 Transformer 的模型
+
+只需根据模型的层命名规则编写相应的正则表达式即可。
 
 ## License
 

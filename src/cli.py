@@ -552,7 +552,10 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         for fig in magnitude_figures:
             fig_name = fig.split("/")[-1]
             magnitude_html += (
-                f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
             )
         report_gen.add_section("Magnitude Analysis", magnitude_html)
 
@@ -562,7 +565,10 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         for fig in weight_figures:
             fig_name = fig.split("/")[-1]
             weight_html += (
-                f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
             )
         report_gen.add_section("Weight Magnitude Analysis", weight_html)
 
@@ -572,7 +578,10 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         for fig in distribution_figures:
             fig_name = fig.split("/")[-1]
             distribution_html += (
-                f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
             )
         report_gen.add_section("Distribution Analysis", distribution_html)
 
@@ -582,7 +591,10 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         for fig in heatmap_figures:
             fig_name = fig.split("/")[-1]
             heatmap_html += (
-                f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
             )
         report_gen.add_section("Heatmap Analysis", heatmap_html)
 
@@ -592,7 +604,10 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         for fig in outlier_figures:
             fig_name = fig.split("/")[-1]
             outlier_html += (
-                f'<img src="{fig_name}" style="max-width:100%; margin: 10px 0;">'
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
             )
         report_gen.add_section("Outlier Analysis", outlier_html)
 

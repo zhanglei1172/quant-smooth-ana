@@ -12,7 +12,7 @@ from typing import Optional
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.layer_matcher import LayerMatcher
+from core.layer_matcher import LayerMatcher, LayerSelector
 from core.memory_manager import AutoMemoryManager
 from core.registry import ModelRegistry
 from models.llama import LlamaAdapter
@@ -230,6 +230,20 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     for name in all_layers[:20]:
         print(f"  {name}")
 
+    # 应用layer_selection配置
+    viz_config = config.get("visualization", {})
+    layer_selection_config = viz_config.get("layer_selection", {})
+    if layer_selection_config:
+        layer_selector = LayerSelector(layer_matcher)
+        selected_layers = layer_selector.apply_config(layer_selection_config)
+        print(f"\nApplied layer_selection config, selected {len(selected_layers)} layers:")
+        for name in selected_layers[:10]:
+            print(f"  {name}")
+        if len(selected_layers) > 10:
+            print(f"  ... and {len(selected_layers) - 10} more")
+    else:
+        print("\nNo layer_selection config found, using all layers")
+
     # 创建显存管理器
     memory_config = config.get("memory", {})
     memory_manager = AutoMemoryManager(
@@ -246,7 +260,6 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     outlier_calc = OutlierCalculator(adapter, layer_matcher, memory_manager)
 
     # 计算magnitude统计
-    viz_config = config.get("visualization", {})
     magnitude_config = viz_config.get("magnitude", {})
 
     # 存储所有统计数据用于可视化
@@ -258,26 +271,32 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     if viz_config.get("enabled", {}).get("magnitude_input", False):
         print("Computing magnitude statistics (input)...")
         for component in magnitude_config.get("components", ["down_proj"]):
-            stats = magnitude_calc.calculate(
-                dataloader,
-                component_type=component,
-                reduce_dim=magnitude_config.get("reduce_dim"),
-                is_input=True,
-            )
-            print(f"  {component}: {stats.shape}")
-            magnitude_stats[f"{component}_input"] = stats
+            try:
+                stats = magnitude_calc.calculate(
+                    dataloader,
+                    component_type=component,
+                    reduce_dim=magnitude_config.get("reduce_dim"),
+                    is_input=True,
+                )
+                print(f"  {component}: {stats.shape}")
+                magnitude_stats[f"{component}_input"] = stats
+            except ValueError as e:
+                print(f"  Warning: Skipping {component} (input): {e}")
 
     if viz_config.get("enabled", {}).get("magnitude_output", False):
         print("Computing magnitude statistics (output)...")
         for component in magnitude_config.get("components", ["down_proj"]):
-            stats = magnitude_calc.calculate(
-                dataloader,
-                component_type=component,
-                reduce_dim=magnitude_config.get("reduce_dim"),
-                is_input=False,
-            )
-            print(f"  {component}: {stats.shape}")
-            magnitude_stats[f"{component}_output"] = stats
+            try:
+                stats = magnitude_calc.calculate(
+                    dataloader,
+                    component_type=component,
+                    reduce_dim=magnitude_config.get("reduce_dim"),
+                    is_input=False,
+                )
+                print(f"  {component}: {stats.shape}")
+                magnitude_stats[f"{component}_output"] = stats
+            except ValueError as e:
+                print(f"  Warning: Skipping {component} (output): {e}")
 
     # 计算权重magnitude统计
     if viz_config.get("enabled", {}).get("magnitude_weight", False):

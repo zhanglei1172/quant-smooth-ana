@@ -5,6 +5,7 @@ Qwen Adapter - Qwen模型适配器
 """
 
 from typing import List, Optional
+
 from core.registry import ModelRegistry
 from models.base import BaseModelAdapter
 
@@ -72,6 +73,8 @@ class QwenAdapter(BaseModelAdapter):
             "up_proj": r"mlp\.up_proj",
             "down_proj": r"mlp\.down_proj",
             "hidden_state": r"$",  # 整个layer的输出
+            "self_attn": r"self_attn$",  # self_attn模块（不包含子模块）
+            "mlp": r"mlp$",  # mlp模块（不包含子模块）
         }
         return patterns.get(component_type)
 

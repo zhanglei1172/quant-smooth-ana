@@ -54,7 +54,7 @@ visualization:
       - o_proj
       - down_proj
       - up_proj
-    reduce_dim: null # -1 for in-channel(cross token), -2 for token
+    reduce_dim: -1 # -1 for in-channel(cross token), -2 for token
     combined_plot: true
   
   # Outlier configuration
@@ -65,17 +65,19 @@ visualization:
   
   # Layer selection (supports regex)
   layer_selection:
-    # Method 1: By component type
+    # Method 1: By component type - only specific layers
     components:
-      q_proj: "all"  # all, or [0, 5, 10]
-      down_proj: "all"
+      q_proj: [0, 5, 10, 15, 20, 25]  # Only select specific layers
+      o_proj: [0, 5, 10, 15, 20, 25]
+      down_proj: [0, 5, 10, 15, 20, 25]
+      up_proj: [0, 5, 10, 15, 20, 25]
     
-    # Method 2: By regex patterns
-    patterns:
-      - "layers\\.\\d+\\.mlp\\.down_proj"
+    # Method 2: By regex patterns (commented out for testing)
+    # patterns:
+    #   - "layers\\.\\d+\\.mlp\\.down_proj"
     
-    # Method 3: By range
-    ranges:
-      - component: "self_attn"
-        start: 0
-        end: 10
+    # Method 3: By range (commented out for testing)
+    # ranges:
+    #   - component: "self_attn"
+    #     start: 0
+    #     end: 10

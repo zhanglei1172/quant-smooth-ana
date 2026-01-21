@@ -30,6 +30,7 @@ class LayerMatcher:
         self.adapter = model_adapter
         self._all_layer_names = None
         self._compiled_patterns = {}
+        self._selected_layers = None  # 用于存储选中的层
 
     def match_layers(self, pattern: str) -> List[str]:
         """
@@ -75,17 +76,25 @@ class LayerMatcher:
         if pattern is None:
             raise ValueError(f"Unknown component type: {component_type}")
 
+        # 首先匹配所有层
+        matched = self.match_layers(pattern)
+
         # 处理layer_indices参数
-        if layer_indices is None or layer_indices == "all":
-            # 匹配所有层
-            matched = self.match_layers(pattern)
-        elif isinstance(layer_indices, list):
-            layer_pattern = "|".join(map(str, layer_indices))
-            # 替换 \d+ 为指定的层索引
-            pattern = pattern.replace(r"\d+", f"({layer_pattern})")
-            matched = self.match_layers(pattern)
-        else:
-            raise ValueError(f"Invalid layer_indices: {layer_indices}")
+        if layer_indices is not None and layer_indices != "all":
+            if isinstance(layer_indices, list):
+                # 从匹配的层中过滤出指定索引的层
+                layer_indices_set = set(layer_indices)
+                filtered = []
+                for layer_name in matched:
+                    # 从 layer 名称中提取层索引
+                    idx_match = re.search(r"layers\.(\d+)", layer_name)
+                    if idx_match:
+                        layer_idx = int(idx_match.group(1))
+                        if layer_idx in layer_indices_set:
+                            filtered.append(layer_name)
+                matched = filtered
+            else:
+                raise ValueError(f"Invalid layer_indices: {layer_indices}")
 
         # 如果有选择的layer，进行过滤
         if hasattr(self, "_selected_layers") and self._selected_layers is not None:
@@ -227,6 +236,32 @@ class LayerMatcher:
             "total_layers": len(all_layers),
         }
 
+    def set_selected_layers(self, layers: List[str]):
+        """
+        设置选中的层列表，后续 match_by_component 等方法会基于此列表过滤
+
+        Args:
+            layers: 选中的层名称列表
+        """
+        self._selected_layers = layers
+        print(f"LayerMatcher: Set {len(layers)} selected layers")
+
+    def clear_selected_layers(self):
+        """
+        清除选中的层列表，恢复默认行为（匹配所有层）
+        """
+        self._selected_layers = None
+        print("LayerMatcher: Cleared selected layers filter")
+
+    def get_selected_layers(self) -> Optional[List[str]]:
+        """
+        获取当前选中的层列表
+
+        Returns:
+            选中的层名称列表，如果未设置则返回 None
+        """
+        return self._selected_layers
+
 
 class LayerSelector:
     """
@@ -243,6 +278,27 @@ class LayerSelector:
             layer_matcher: LayerMatcher实例
         """
         self.matcher = layer_matcher
+
+    def apply_config(self, layer_selection: dict) -> List[str]:
+        """
+        应用配置并设置LayerMatcher的选中层
+
+        Args:
+            layer_selection: 配置字典
+
+        Returns:
+            选择的layer名称列表
+        """
+        selected = self.select_from_config(layer_selection)
+        if selected:
+            self.matcher.set_selected_layers(selected)
+        return selected
+
+    def clear(self):
+        """
+        清除LayerMatcher的选中层设置
+        """
+        self.matcher.clear_selected_layers()
 
     def select_from_config(self, layer_selection: dict) -> List[str]:
         """
@@ -272,8 +328,11 @@ class LayerSelector:
         if "components" in layer_selection:
             components = layer_selection["components"]
             for component_type, layer_indices in components.items():
-                matched = self.matcher.match_by_component(component_type, layer_indices)
-                selected.update(matched)
+                try:
+                    matched = self.matcher.match_by_component(component_type, layer_indices)
+                    selected.update(matched)
+                except ValueError as e:
+                    print(f"Warning: {e}, skipping component '{component_type}'")
 
         # 方式2: 通过正则表达式
         if "patterns" in layer_selection:
@@ -287,7 +346,10 @@ class LayerSelector:
                 component = range_config["component"]
                 start = range_config["start"]
                 end = range_config["end"]
-                matched = self.matcher.match_by_range(component, start, end)
-                selected.update(matched)
+                try:
+                    matched = self.matcher.match_by_range(component, start, end)
+                    selected.update(matched)
+                except ValueError as e:
+                    print(f"Warning: {e}, skipping range for '{component}'")
 
         return sorted(selected)

@@ -218,7 +218,7 @@ class AutoMemoryManager:
     def print_memory_usage(self):
         """打印显存使用情况"""
         usage = self.get_memory_usage()
-        print(f"GPU Memory Usage:")
+        print("GPU Memory Usage:")
         print(f"  Allocated: {usage['allocated_gb']:.2f} GB")
         print(f"  Reserved: {usage['reserved_gb']:.2f} GB")
         print(f"  Free: {usage['free_gb']:.2f} GB")

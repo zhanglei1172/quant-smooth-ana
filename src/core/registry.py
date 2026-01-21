@@ -6,7 +6,6 @@ Model Registry - 插件式模型注册机制
 """
 
 from typing import Type, Dict, Any, Optional
-from abc import ABC
 
 
 class ModelRegistry:

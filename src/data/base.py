@@ -5,7 +5,7 @@ Base Data Loader - 数据加载器基类
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple
 import torch
 
 

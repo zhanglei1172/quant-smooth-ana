@@ -74,7 +74,9 @@ class Heatmap3DVisualizer(BaseVisualizer):
             is_3d: 是否为3D图
         """
         # Calculate ratio
-        ratio_max_p99 = stats["max"] / stats["p99"] if stats["p99"] != 0 else float("inf")
+        ratio_max_p99 = (
+            stats["max"] / stats["p99"] if stats["p99"] != 0 else float("inf")
+        )
         ratio_color = "red" if ratio_max_p99 > 64 else "green"
 
         # Build statistics text
@@ -82,7 +84,9 @@ class Heatmap3DVisualizer(BaseVisualizer):
         stats_text += f"Mean: {stats['mean']:.3f}, Std: {stats['std']:.3f}\n"
         stats_text += f"Min: {stats['min']:.3f}, Max: {stats['max']:.3f}\n"
         stats_text += f"P99: {stats['p99']:.3f}\n"
-        stats_text += f"Outliers (>3σ): {stats['outliers']} ({stats['outlier_percentage']:.1f}%)"
+        stats_text += (
+            f"Outliers (>3σ): {stats['outliers']} ({stats['outlier_percentage']:.1f}%)"
+        )
 
         # Position main statistics text
         if not is_3d:
@@ -108,7 +112,11 @@ class Heatmap3DVisualizer(BaseVisualizer):
                 color=ratio_color,
                 fontweight="bold",
                 bbox=dict(
-                    boxstyle="round", facecolor="white", alpha=0.9, edgecolor=ratio_color, linewidth=2
+                    boxstyle="round",
+                    facecolor="white",
+                    alpha=0.9,
+                    edgecolor=ratio_color,
+                    linewidth=2,
                 ),
             )
 
@@ -134,7 +142,6 @@ class Heatmap3DVisualizer(BaseVisualizer):
         Returns:
             保存的文件路径
         """
-        from mpl_toolkits.mplot3d import Axes3D
 
         num_layers, seq_len, hidden_dim = data.shape
 

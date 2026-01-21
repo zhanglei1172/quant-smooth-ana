@@ -5,7 +5,6 @@ Layer Matcher - Layer名称正则匹配系统
 """
 
 import re
-from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 
 
@@ -329,7 +328,9 @@ class LayerSelector:
             components = layer_selection["components"]
             for component_type, layer_indices in components.items():
                 try:
-                    matched = self.matcher.match_by_component(component_type, layer_indices)
+                    matched = self.matcher.match_by_component(
+                        component_type, layer_indices
+                    )
                     selected.update(matched)
                 except ValueError as e:
                     print(f"Warning: {e}, skipping component '{component_type}'")

@@ -7,7 +7,6 @@ CLI - 命令行入口
 import argparse
 import os
 import sys
-from typing import Optional
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,8 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.layer_matcher import LayerMatcher, LayerSelector
 from core.memory_manager import AutoMemoryManager
 from core.registry import ModelRegistry
-from models.llama import LlamaAdapter
-from models.qwen import QwenAdapter
 from utils.config import ConfigLoader
 
 
@@ -236,7 +233,9 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     if layer_selection_config:
         layer_selector = LayerSelector(layer_matcher)
         selected_layers = layer_selector.apply_config(layer_selection_config)
-        print(f"\nApplied layer_selection config, selected {len(selected_layers)} layers:")
+        print(
+            f"\nApplied layer_selection config, selected {len(selected_layers)} layers:"
+        )
         for name in selected_layers[:10]:
             print(f"  {name}")
         if len(selected_layers) > 10:

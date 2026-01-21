@@ -5,8 +5,7 @@ Distribution Visualizer - 分布可视化器
 """
 
 import matplotlib.pyplot as plt
-import numpy as np
-from typing import Optional, List
+from typing import Optional
 from .base import BaseVisualizer
 
 

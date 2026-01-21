@@ -4,7 +4,7 @@ Magnitude Calculator - Magnitude统计计算器
 计算激活值的magnitude统计（Top-1/2/3、Median、Min）
 """
 
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import torch

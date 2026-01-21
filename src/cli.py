@@ -8,12 +8,13 @@ import argparse
 import os
 import sys
 
+import torch
+
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.layer_matcher import LayerMatcher, LayerSelector
 from core.memory_manager import AutoMemoryManager
-from core.registry import ModelRegistry
 from utils.config import ConfigLoader
 
 
@@ -214,23 +215,16 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         tokenizer: 分词器
         dataloader: 数据加载器
     """
-    # 获取模型适配器
-    adapter = ModelRegistry.get_adapter(model)
-
-    # 创建layer匹配器
-    layer_matcher = LayerMatcher(adapter)
+    # 直接创建layer匹配器（不再需要适配器）
+    layer_matcher = LayerMatcher(model)
 
     # 调试：打印所有layer名称
-    all_layers = layer_matcher._get_all_layer_names()
-    print(f"\nTotal layers found: {len(all_layers)}")
-    print("First 20 layer names:")
-    for name in all_layers[:20]:
-        print(f"  {name}")
+    layer_matcher.print_all_layers(max_display=20)
 
     # 应用layer_selection配置
     viz_config = config.get("visualization", {})
     layer_selection_config = viz_config.get("layer_selection", {})
-    if layer_selection_config:
+    if layer_selection_config and "patterns" in layer_selection_config:
         layer_selector = LayerSelector(layer_matcher)
         selected_layers = layer_selector.apply_config(layer_selection_config)
         print(
@@ -241,7 +235,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         if len(selected_layers) > 10:
             print(f"  ... and {len(selected_layers) - 10} more")
     else:
-        print("\nNo layer_selection config found, using all layers")
+        print("\nNo patterns found in layer_selection config, using all layers")
 
     # 创建显存管理器
     memory_config = config.get("memory", {})
@@ -255,8 +249,8 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     from statistics.magnitude import MagnitudeCalculator
     from statistics.outlier import OutlierCalculator
 
-    magnitude_calc = MagnitudeCalculator(adapter, layer_matcher, memory_manager)
-    outlier_calc = OutlierCalculator(adapter, layer_matcher, memory_manager)
+    magnitude_calc = MagnitudeCalculator(model, layer_matcher, memory_manager)
+    outlier_calc = OutlierCalculator(model, layer_matcher, memory_manager)
 
     # 计算magnitude统计
     magnitude_config = viz_config.get("magnitude", {})
@@ -267,61 +261,71 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     distribution_stats = {}
     heatmap_stats = {}
 
+    # 获取配置的patterns
+    patterns = magnitude_config.get("patterns", [r"mlp\.down_proj"])
+
     if viz_config.get("enabled", {}).get("magnitude_input", False):
         print("Computing magnitude statistics (input)...")
-        for component in magnitude_config.get("components", ["down_proj"]):
+        for pattern in patterns:
             try:
                 stats = magnitude_calc.calculate(
                     dataloader,
-                    component_type=component,
+                    pattern=pattern,
                     reduce_dim=magnitude_config.get("reduce_dim"),
                     is_input=True,
                 )
-                print(f"  {component}: {stats.shape}")
-                magnitude_stats[f"{component}_input"] = stats
+                # 使用简化的名称作为key
+                pattern_name = pattern.replace("\\", "").replace(".", "_")
+                print(f"  {pattern}: {stats.shape}")
+                magnitude_stats[f"{pattern_name}_input"] = {
+                    "stats": stats,
+                    "pattern": pattern,
+                }
             except ValueError as e:
-                print(f"  Warning: Skipping {component} (input): {e}")
+                print(f"  Warning: Skipping pattern {pattern} (input): {e}")
 
     if viz_config.get("enabled", {}).get("magnitude_output", False):
         print("Computing magnitude statistics (output)...")
-        for component in magnitude_config.get("components", ["down_proj"]):
+        for pattern in patterns:
             try:
                 stats = magnitude_calc.calculate(
                     dataloader,
-                    component_type=component,
+                    pattern=pattern,
                     reduce_dim=magnitude_config.get("reduce_dim"),
                     is_input=False,
                 )
-                print(f"  {component}: {stats.shape}")
-                magnitude_stats[f"{component}_output"] = stats
+                pattern_name = pattern.replace("\\", "").replace(".", "_")
+                print(f"  {pattern}: {stats.shape}")
+                magnitude_stats[f"{pattern_name}_output"] = {
+                    "stats": stats,
+                    "pattern": pattern,
+                }
             except ValueError as e:
-                print(f"  Warning: Skipping {component} (output): {e}")
+                print(f"  Warning: Skipping pattern {pattern} (output): {e}")
 
     # 计算权重magnitude统计
     if viz_config.get("enabled", {}).get("magnitude_weight", False):
         print("Computing weight magnitude statistics...")
-        weight_components = magnitude_config.get("weight", {}).get(
-            "components", magnitude_config.get("components", ["down_proj"])
-        )
-        for component in weight_components:
+        weight_patterns = magnitude_config.get("weight", {}).get("patterns", patterns)
+        for pattern in weight_patterns:
             try:
-                stats = magnitude_calc.calculate_weight(component_type=component)
-                print(f"  {component}: {stats.shape}")
-                weight_stats[component] = stats
+                stats = magnitude_calc.calculate_weight(pattern=pattern)
+                pattern_name = pattern.replace("\\", "").replace(".", "_")
+                print(f"  {pattern}: {stats.shape}")
+                weight_stats[pattern_name] = {"stats": stats, "pattern": pattern}
             except Exception as e:
-                print(
-                    f"  Warning: Could not calculate weight stats for {component}: {e}"
-                )
+                print(f"  Warning: Could not calculate weight stats for {pattern}: {e}")
 
     # 计算outlier统计
     outlier_config = viz_config.get("outlier", {})
     outlier_stats = {}
+    outlier_pattern = outlier_config.get("pattern", patterns)
 
     if viz_config.get("enabled", {}).get("outlier_layer_wise", False):
         print("Computing outlier statistics...")
         stats = outlier_calc.calculate_layer_wise_count(
             dataloader,
-            component_type=outlier_config.get("component_type", "down_proj"),
+            pattern=outlier_pattern,
             outlier_threshold=outlier_config.get("threshold", 64),
         )
         print(f"  Layer-wise count: {stats.shape}")
@@ -331,7 +335,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         print("Computing outlier token positions...")
         positions = outlier_calc.calculate_token_position(
             dataloader,
-            component_type=outlier_config.get("component_type", "down_proj"),
+            pattern=outlier_pattern,
             outlier_threshold=outlier_config.get("threshold", 20),
         )
         print(f"  Token positions: {len(positions)} tokens")
@@ -341,7 +345,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         print("Computing outlier token content...")
         token_content = outlier_calc.calculate_token_content(
             dataloader,
-            component_type=outlier_config.get("component_type", "down_proj"),
+            pattern=outlier_pattern,
             outlier_threshold=outlier_config.get("threshold", 20),
             tokenizer=tokenizer,
         )
@@ -354,38 +358,34 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     if viz_config.get("enabled", {}).get("distribution", False):
         print("Computing distribution statistics...")
         distribution_config = viz_config.get("distribution", {})
-        distribution_components = distribution_config.get(
-            "components", magnitude_config.get("components", ["down_proj"])
-        )
-        for component in distribution_components:
+        distribution_patterns = distribution_config.get("patterns", patterns)
+        for pattern in distribution_patterns:
             try:
                 stats = magnitude_calc.calculate_distribution(
                     dataloader,
-                    component_type=component,
+                    pattern=pattern,
                     is_input=distribution_config.get("is_input", True),
                 )
-                print(f"  {component}: {len(stats['values'])} layers")
-                distribution_stats[component] = stats
+                pattern_name = pattern.replace("\\", "").replace(".", "_")
+                print(f"  {pattern}: {len(stats['values'])} layers")
+                distribution_stats[pattern_name] = {"stats": stats, "pattern": pattern}
             except Exception as e:
-                print(
-                    f"  Warning: Could not calculate distribution for {component}: {e}"
-                )
+                print(f"  Warning: Could not calculate distribution for {pattern}: {e}")
 
     # 计算heatmap_3d统计
     if viz_config.get("enabled", {}).get("heatmap_3d", False):
         print("Computing heatmap data...")
         heatmap_config = viz_config.get("heatmap_3d", {})
+        heatmap_pattern = heatmap_config.get("pattern", patterns[0])
         heatmap_data = magnitude_calc.calculate_heatmap_data(
             dataloader,
-            component_type=heatmap_config.get("component_type", "down_proj"),
+            pattern=heatmap_pattern,
             sample_idx=heatmap_config.get("sample_idx", 0),
             is_input=heatmap_config.get("is_input", False),
         )
         print(f"  Heatmap shape: {heatmap_data.shape}")
         heatmap_stats["data"] = heatmap_data
-        heatmap_stats["component_type"] = heatmap_config.get(
-            "component_type", "down_proj"
-        )
+        heatmap_stats["pattern"] = heatmap_pattern
 
     # 生成可视化
     from visualization.magnitude_plot import MagnitudeVisualizer
@@ -399,14 +399,17 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
 
     # 生成magnitude可视化
     magnitude_figures = []
-    for key, stats in magnitude_stats.items():
-        component, plot_type = key.rsplit("_", 1)
-        layer_names = layer_matcher.match_by_component(component)
+    for key, data in magnitude_stats.items():
+        stats = data["stats"]
+        pattern = data["pattern"]
+        plot_type = "input" if "input" in key else "output"
+        layer_names = layer_matcher.match_layers(pattern)
+        layer_names = layer_matcher.filter_by_selected(layer_names)
         figure = magnitude_viz.visualize(
             stats_data=stats,
             layer_names=layer_names,
             plot_type=plot_type,
-            component_type=component,
+            component_type=key,  # 使用key作为标识
         )
         if figure:
             magnitude_figures.append(figure)
@@ -414,10 +417,13 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
 
     # 生成权重magnitude可视化
     weight_figures = []
-    for component, stats in weight_stats.items():
-        layer_names = layer_matcher.match_by_component(component)
+    for key, data in weight_stats.items():
+        stats = data["stats"]
+        pattern = data["pattern"]
+        layer_names = layer_matcher.match_layers(pattern)
+        layer_names = layer_matcher.filter_by_selected(layer_names)
         figure = magnitude_viz.visualize_weight(
-            stats_data=stats, layer_names=layer_names, component_type=component
+            stats_data=stats, layer_names=layer_names, component_type=key
         )
         if figure:
             weight_figures.append(figure)
@@ -433,12 +439,15 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         distribution_config = viz_config.get("distribution", {})
         plot_types = distribution_config.get("plot_types", ["boxplot"])
 
-        for component, stats in distribution_stats.items():
-            layer_names = layer_matcher.match_by_component(component)
+        for key, data in distribution_stats.items():
+            stats = data["stats"]
+            pattern = data["pattern"]
+            layer_names = layer_matcher.match_layers(pattern)
+            layer_names = layer_matcher.filter_by_selected(layer_names)
 
             if "boxplot" in plot_types:
                 figure = distribution_viz.visualize_boxplot(
-                    stats=stats, layer_names=layer_names, component_type=component
+                    stats=stats, layer_names=layer_names, component_type=key
                 )
                 if figure:
                     distribution_figures.append(figure)
@@ -448,7 +457,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 figure = distribution_viz.visualize_histogram(
                     stats=stats,
                     layer_names=layer_names,
-                    component_type=component,
+                    component_type=key,
                     num_layers_to_show=distribution_config.get("num_layers_to_show", 4),
                 )
                 if figure:
@@ -463,14 +472,15 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         heatmap_viz = Heatmap3DVisualizer(viz_config)
 
         heatmap_config = viz_config.get("heatmap_3d", {})
-        component_type = heatmap_stats.get("component_type", "down_proj")
-        layer_names = layer_matcher.match_by_component(component_type)
+        heatmap_pattern = heatmap_stats.get("pattern", patterns)
+        layer_names = layer_matcher.match_layers(heatmap_pattern)
+        layer_names = layer_matcher.filter_by_selected(layer_names)
 
         # 3D热力图
         figure = heatmap_viz.visualize_3d_heatmap(
             data=heatmap_stats["data"],
             layer_names=layer_names,
-            component_type=component_type,
+            component_type="heatmap",
             view_angle=tuple(heatmap_config.get("view_angle", [30, 45])),
         )
         if figure:
@@ -483,7 +493,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
             figure = heatmap_viz.visualize_2d_heatmap(
                 data=heatmap_stats["data"],
                 layer_names=layer_names,
-                component_type=component_type,
+                component_type="heatmap",
                 layer_idx=layer_idx,
             )
             if figure:
@@ -493,11 +503,11 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     # 生成outlier可视化
     outlier_figures = []
     if "layer_wise_count" in outlier_stats:
+        outlier_layer_names = layer_matcher.match_layers(outlier_pattern)
+        outlier_layer_names = layer_matcher.filter_by_selected(outlier_layer_names)
         figure = outlier_viz.visualize_layer_wise_count(
             stats=outlier_stats["layer_wise_count"],
-            layer_names=layer_matcher.match_by_component(
-                outlier_config.get("component_type", "down_proj")
-            ),
+            layer_names=outlier_layer_names,
         )
         if figure:
             outlier_figures.append(figure)
@@ -595,13 +605,14 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     if "csv" in output_config.get("formats", []):
         from utils.export import DataExporter
 
-        exporter = DataExporter(viz_config.get("save_dir", "./figures"))
+        _exporter = DataExporter(viz_config.get("save_dir", "./figures"))  # noqa: F841
         print("Exporting data...")
         # TODO: 导出统计数据
 
     print("Analysis completed successfully!")
 
 
+@torch.no_grad()
 def main():
     """主函数"""
     args = parse_args()

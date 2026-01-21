@@ -4,8 +4,7 @@
 model:
   path: "/path/to/your/model"
   name: "model-name"
-  family: "llama"  # llama, qwen, mistral, etc.
-  hf_token: null
+  # family字段已移除，不再需要模型适配器
 
 # Data configuration
 data:
@@ -47,35 +46,35 @@ visualization:
     heatmap_3d: false
     distribution: false
   
-  # Magnitude configuration
+  # Magnitude configuration - 使用正则表达式匹配层
   magnitude:
-    components:
-      - q_proj
-      - o_proj
-      - down_proj
-      - up_proj
-    reduce_dim: null
+    # 使用正则表达式patterns来选择要分析的层
+    patterns:
+      - "mlp\\.down_proj"   # 匹配所有down_proj层
+      - "mlp\\.up_proj"     # 匹配所有up_proj层
+      - "self_attn\\.q_proj"  # 匹配所有q_proj层
+      - "self_attn\\.o_proj"  # 匹配所有o_proj层
+    reduce_dim: -1
     combined_plot: true
   
-  # Outlier configuration
+  # Outlier configuration - 使用正则表达式匹配层
   outlier:
     threshold: 64  # Outlier threshold (relative to median)
-    component_type: "hidden_state"  # Component to analyze
+    pattern: "layers\\.\\d+$"  # 使用正则匹配transformer层输出
     decode_tokens: true  # Whether to decode token content
   
-  # Layer selection (supports regex)
+  # Layer selection - 统一使用正则表达式
+  # 这里配置的patterns会过滤所有分析（如果不配置，则分析所有匹配的层）
   layer_selection:
-    # Method 1: By component type
-    components:
-      q_proj: "all"  # all, or [0, 5, 10]
-      down_proj: "all"
-    
-    # Method 2: By regex patterns
+    # 使用正则表达式选择要分析的层
     patterns:
-      - "layers\\.\\d+\\.mlp\\.down_proj"
+      - "layers\\.\\d+\\.mlp\\.down_proj"    # 所有down_proj层
+      - "layers\\.\\d+\\.mlp\\.up_proj"      # 所有up_proj层
+      - "layers\\.\\d+\\.self_attn\\.q_proj" # 所有q_proj层
+      - "layers\\.\\d+\\.self_attn\\.o_proj" # 所有o_proj层
     
-    # Method 3: By range
-    ranges:
-      - component: "self_attn"
-        start: 0
-        end: 10
+    # 正则表达式示例:
+    # - "layers\\.[0-9]\\."           # 只匹配0-9层
+    # - "layers\\.(0|5|10|15)\\."     # 只匹配特定层
+    # - "model\\.layers\\.\\d+$"      # 匹配整个transformer层
+    # - "language_model\\.model\\.layers\\.\\d+\\.mlp"  # VL模型的mlp层

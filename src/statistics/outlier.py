@@ -25,7 +25,7 @@ class OutlierCalculator(BaseStatCalculator):
     def calculate(
         self,
         dataloader,
-        component_type="hidden_state",
+        pattern: str = r"layers\.\d+$",
         outlier_threshold=64,
         tokenizer=None,
         **kwargs,
@@ -35,7 +35,7 @@ class OutlierCalculator(BaseStatCalculator):
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             outlier_threshold: outlier阈值
             tokenizer: 分词器
             **kwargs: 其他参数
@@ -44,18 +44,18 @@ class OutlierCalculator(BaseStatCalculator):
             results: 包含所有统计指标的字典
         """
         return self.calculate_all(
-            dataloader, component_type, outlier_threshold, tokenizer, **kwargs
+            dataloader, pattern, outlier_threshold, tokenizer, **kwargs
         )
 
     def calculate_layer_wise_count(
-        self, dataloader, component_type="hidden_state", outlier_threshold=64, **kwargs
+        self, dataloader, pattern: str = r"layers\.\d+$", outlier_threshold=64, **kwargs
     ) -> np.ndarray:
         """
         计算每层outlier token数量
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             outlier_threshold: outlier阈值（相对于median的倍数）
 
         Returns:
@@ -63,14 +63,14 @@ class OutlierCalculator(BaseStatCalculator):
                   - stats[:, 0, :] = outlier token数量
         """
         # 获取所有匹配的layer
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
         num_layers = len(layer_names)
 
         if num_layers == 0:
-            raise ValueError(f"No layers found for component type: {component_type}")
+            raise ValueError(f"No layers found for pattern: {pattern}")
 
         stats = []
-        num_samples = len(dataloader)
 
         for data in dataloader:
             input_data = data[0].reshape(1, -1)
@@ -105,21 +105,22 @@ class OutlierCalculator(BaseStatCalculator):
         return np.array(stats)
 
     def calculate_token_position(
-        self, dataloader, component_type="hidden_state", outlier_threshold=20, **kwargs
+        self, dataloader, pattern: str = r"layers\.\d+$", outlier_threshold=20, **kwargs
     ) -> List[int]:
         """
         计算outlier token位置分布
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             outlier_threshold: outlier阈值
 
         Returns:
             positions: outlier token位置列表
         """
         positions = []
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
 
         for data in dataloader:
             input_data = data[0].reshape(1, -1)
@@ -153,7 +154,7 @@ class OutlierCalculator(BaseStatCalculator):
     def calculate_token_content(
         self,
         dataloader,
-        component_type="hidden_state",
+        pattern: str = r"layers\.\d+$",
         outlier_threshold=20,
         tokenizer=None,
         **kwargs,
@@ -163,7 +164,7 @@ class OutlierCalculator(BaseStatCalculator):
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             outlier_threshold: outlier阈值
             tokenizer: 分词器（用于解码token）
 
@@ -171,7 +172,8 @@ class OutlierCalculator(BaseStatCalculator):
             token_info: 字典，包含token内容和统计信息
         """
         token_counts = {}
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
 
         for data in dataloader:
             input_data = data[0].reshape(1, -1)
@@ -215,7 +217,7 @@ class OutlierCalculator(BaseStatCalculator):
                 try:
                     decoded = tokenizer.decode([token_id])
                     decoded_tokens[decoded] = count
-                except:
+                except Exception:
                     decoded_tokens[f"<token_{token_id}>"] = count
 
             return {
@@ -232,7 +234,7 @@ class OutlierCalculator(BaseStatCalculator):
     def calculate_all(
         self,
         dataloader,
-        component_type="hidden_state",
+        pattern: str = r"layers\.\d+$",
         outlier_threshold=64,
         tokenizer=None,
         **kwargs,
@@ -242,7 +244,7 @@ class OutlierCalculator(BaseStatCalculator):
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             outlier_threshold: outlier阈值
             tokenizer: 分词器
 
@@ -250,15 +252,15 @@ class OutlierCalculator(BaseStatCalculator):
             results: 包含所有统计指标的字典
         """
         layer_wise_count = self.calculate_layer_wise_count(
-            dataloader, component_type, outlier_threshold, **kwargs
+            dataloader, pattern, outlier_threshold, **kwargs
         )
 
         token_position = self.calculate_token_position(
-            dataloader, component_type, outlier_threshold, **kwargs
+            dataloader, pattern, outlier_threshold, **kwargs
         )
 
         token_content = self.calculate_token_content(
-            dataloader, component_type, outlier_threshold, tokenizer, **kwargs
+            dataloader, pattern, outlier_threshold, tokenizer, **kwargs
         )
 
         return {

@@ -25,7 +25,7 @@ class MagnitudeCalculator(BaseStatCalculator):
     def calculate(
         self,
         dataloader,
-        component_type="down_proj",
+        pattern: str = r"mlp\.down_proj",
         reduce_dim=None,
         is_input=True,
         **kwargs,
@@ -35,7 +35,7 @@ class MagnitudeCalculator(BaseStatCalculator):
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型（如 'down_proj', 'q_proj'）
+            pattern: 正则表达式模式，用于匹配layer
             reduce_dim: 是否按张量统计（False则按token统计）
             is_input: True统计输入，False统计输出
 
@@ -48,16 +48,17 @@ class MagnitudeCalculator(BaseStatCalculator):
                   - stats[:, 4, :] = Min
         """
         # 获取所有匹配的layer
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        # 如果有选中的层，进行过滤
+        layer_names = self.matcher.filter_by_selected(layer_names)
         num_layers = len(layer_names)
 
         # 调试信息
-        pattern = self.adapter.get_layer_name_pattern(component_type)
-        print(f"\nDebug: component_type={component_type}, pattern={pattern}")
+        print(f"\nDebug: pattern={pattern}")
         print(f"Debug: matched layers: {layer_names}")
 
         if num_layers == 0:
-            raise ValueError(f"No layers found for component type: {component_type}")
+            raise ValueError(f"No layers found for pattern: {pattern}")
 
         stats = []
         num_samples = len(dataloader)
@@ -78,7 +79,7 @@ class MagnitudeCalculator(BaseStatCalculator):
                 activation = activation_dict[layer_name]
                 activation_abs = activation.abs()
                 if reduce_dim:
-                    activation_abs = activation_abs.max(dims=reduce_dim).values
+                    activation_abs = activation_abs.max(reduce_dim).values
                 else:
                     activation_abs = activation_abs.max()
 
@@ -126,44 +127,46 @@ class MagnitudeCalculator(BaseStatCalculator):
 
         return np.array(stats)
 
-    def calculate_for_components(
+    def calculate_for_patterns(
         self,
         dataloader,
-        component_types: List[str],
+        patterns: List[str],
         reduce_dim=None,
         is_input=True,
         **kwargs,
     ) -> dict:
         """
-        为多个组件类型计算magnitude统计
+        为多个正则模式计算magnitude统计
 
         Args:
             dataloader: 数据加载器
-            component_types: 组件类型列表
+            patterns: 正则表达式列表
             reduce_dim: 是否按张量统计
             is_input: True统计输入，False统计输出
 
         Returns:
-            统计结果字典 {component_type: stats_array}
+            统计结果字典 {pattern: stats_array}
         """
         results = {}
-        for component_type in component_types:
+        for pattern in patterns:
             try:
                 stats = self.calculate(
-                    dataloader, component_type, reduce_dim, is_input, **kwargs
+                    dataloader, pattern, reduce_dim, is_input, **kwargs
                 )
-                results[component_type] = stats
+                results[pattern] = stats
             except Exception as e:
-                print(f"Warning: Could not calculate stats for {component_type}: {e}")
+                print(f"Warning: Could not calculate stats for pattern {pattern}: {e}")
 
         return results
 
-    def calculate_weight(self, component_type="down_proj", **kwargs) -> np.ndarray:
+    def calculate_weight(
+        self, pattern: str = r"mlp\.down_proj", **kwargs
+    ) -> np.ndarray:
         """
         计算权重magnitude统计
 
         Args:
-            component_type: 组件类型（如 'down_proj', 'q_proj'）
+            pattern: 正则表达式模式，用于匹配layer
 
         Returns:
             stats: numpy数组，形状为 [5, num_layers]
@@ -174,11 +177,12 @@ class MagnitudeCalculator(BaseStatCalculator):
                   - stats[4, :] = Min
         """
         # 获取所有匹配的layer
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
         num_layers = len(layer_names)
 
         if num_layers == 0:
-            raise ValueError(f"No layers found for component type: {component_type}")
+            raise ValueError(f"No layers found for pattern: {pattern}")
 
         # 计算统计
         stats = np.zeros((5, num_layers))
@@ -186,7 +190,7 @@ class MagnitudeCalculator(BaseStatCalculator):
         for layer_idx, layer_name in enumerate(layer_names):
             try:
                 # 获取权重张量
-                layer = self.adapter.model.get_submodule(layer_name)
+                layer = self.model.get_submodule(layer_name)
                 weight = layer.weight  # [out_features, in_features]
 
                 # 计算绝对值
@@ -215,21 +219,22 @@ class MagnitudeCalculator(BaseStatCalculator):
 
             except Exception as e:
                 print(
-                    f"Warning: Could not calculate weight stats for layer {layer_name}: {e}"
+                    f"Warning: Could not calculate weight stats "
+                    f"for layer {layer_name}: {e}"
                 )
                 # 保持为0
 
         return stats
 
     def calculate_distribution(
-        self, dataloader, component_type="down_proj", is_input=True, **kwargs
+        self, dataloader, pattern: str = r"mlp\.down_proj", is_input=True, **kwargs
     ) -> dict:
         """
         计算激活值分布
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             is_input: True统计输入，False统计输出
 
         Returns:
@@ -245,11 +250,12 @@ class MagnitudeCalculator(BaseStatCalculator):
             }
         """
         # 获取所有匹配的layer
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
         num_layers = len(layer_names)
 
         if num_layers == 0:
-            raise ValueError(f"No layers found for component type: {component_type}")
+            raise ValueError(f"No layers found for pattern: {pattern}")
 
         # 初始化存储
         all_values = [[] for _ in range(num_layers)]
@@ -303,7 +309,7 @@ class MagnitudeCalculator(BaseStatCalculator):
     def calculate_heatmap_data(
         self,
         dataloader,
-        component_type="hidden_state",
+        pattern: str = r"layers\.\d+$",
         sample_idx=0,
         is_input=False,
         **kwargs,
@@ -313,7 +319,7 @@ class MagnitudeCalculator(BaseStatCalculator):
 
         Args:
             dataloader: 数据加载器
-            component_type: 组件类型
+            pattern: 正则表达式模式，用于匹配layer
             sample_idx: 要分析的样本索引
             is_input: True使用输入，False使用输出
 
@@ -321,11 +327,12 @@ class MagnitudeCalculator(BaseStatCalculator):
             heatmap_data: numpy数组，形状为 [num_layers, seq_len, hidden_dim]
         """
         # 获取所有匹配的layer
-        layer_names = self.matcher.match_by_component(component_type)
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
         num_layers = len(layer_names)
 
         if num_layers == 0:
-            raise ValueError(f"No layers found for component type: {component_type}")
+            raise ValueError(f"No layers found for pattern: {pattern}")
 
         # 获取指定样本
         data = dataloader[sample_idx][0].reshape(1, -1)
@@ -375,7 +382,8 @@ class MagnitudeCalculator(BaseStatCalculator):
                 heatmap_data.append(activation_abs.cpu().numpy())
             else:
                 print(
-                    f"Warning: Unexpected activation shape {activation.shape} for layer {layer_name}"
+                    f"Warning: Unexpected activation shape "
+                    f"{activation.shape} for layer {layer_name}"
                 )
                 heatmap_data.append(np.zeros((1, 1)))
 

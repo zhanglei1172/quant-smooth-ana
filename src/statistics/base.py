@@ -17,16 +17,16 @@ class BaseStatCalculator(ABC):
     所有统计计算器都应该继承这个类
     """
 
-    def __init__(self, model_adapter, layer_matcher, memory_manager):
+    def __init__(self, model, layer_matcher, memory_manager):
         """
         初始化统计计算器
 
         Args:
-            model_adapter: 模型适配器
+            model: PyTorch模型实例
             layer_matcher: Layer匹配器
             memory_manager: 显存管理器
         """
-        self.adapter = model_adapter
+        self.model = model
         self.matcher = layer_matcher
         self.memory_manager = memory_manager
 
@@ -83,7 +83,7 @@ class BaseStatCalculator(ABC):
         # 注册hooks
         for layer_name in layer_names:
             try:
-                layer = self.adapter.model.get_submodule(layer_name)
+                layer = self.model.get_submodule(layer_name)
                 hooks.append(
                     layer.register_forward_hook(make_hook(layer_name, is_input))
                 )
@@ -92,16 +92,15 @@ class BaseStatCalculator(ABC):
 
         # 前向传播
         with torch.no_grad():
-            # 获取embedding层的设备
-            embeddings = self.adapter.get_embeddings()
-            if embeddings and len(embeddings) > 0:
-                embed_device = next(embeddings[0].parameters()).device
-                # 将输入数据移动到embedding层的设备
-                input_data = input_data.to(embed_device)
+            # 获取第一个参数的设备
+            first_param = next(self.model.parameters(), None)
+            if first_param is not None:
+                device = first_param.device
+                input_data = input_data.to(device)
 
             # 让模型自己处理设备映射
             # 禁用KV缓存以避免旋转位置编码问题
-            _ = self.adapter.model(input_data, use_cache=False)
+            _ = self.model(input_data, use_cache=False)
 
         # 移除hooks
         for hook in hooks:

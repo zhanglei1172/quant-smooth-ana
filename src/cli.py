@@ -387,6 +387,34 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         heatmap_stats["data"] = heatmap_data
         heatmap_stats["pattern"] = heatmap_pattern
 
+    # 计算percentile_range统计（用于hidden dimension百分位数范围可视化）
+    percentile_stats = {}
+    if viz_config.get("enabled", {}).get("percentile_range", False):
+        print("Computing percentile range statistics...")
+        percentile_config = viz_config.get("percentile_range", {})
+        percentile_patterns = percentile_config.get("patterns", patterns)
+        is_input = percentile_config.get("is_input", True)
+        use_abs = percentile_config.get("use_abs", False)
+        
+        for pattern in percentile_patterns:
+            try:
+                stats = magnitude_calc.calculate_percentile_range(
+                    dataloader,
+                    pattern=pattern,
+                    is_input=is_input,
+                    use_abs=use_abs,
+                )
+                pattern_name = pattern.replace("\\", "").replace(".", "_")
+                plot_type = "input" if is_input else "output"
+                print(f"  {pattern}: {len(stats)} layers")
+                percentile_stats[pattern_name] = {
+                    "stats": stats,
+                    "pattern": pattern,
+                    "is_input": is_input,
+                }
+            except Exception as e:
+                print(f"  Warning: Could not calculate percentile range for {pattern}: {e}")
+
     # 生成可视化
     from visualization.magnitude_plot import MagnitudeVisualizer
     from visualization.outlier_plot import OutlierVisualizer
@@ -500,6 +528,66 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 heatmap_figures.append(figure)
                 print(f"  Generated 2D heatmap layer {layer_idx}: {figure}")
 
+    # 生成percentile_range可视化
+    percentile_figures = []
+    if percentile_stats:
+        from visualization.percentile_plot import PercentileVisualizer
+
+        percentile_viz = PercentileVisualizer(viz_config)
+        percentile_config = viz_config.get("percentile_range", {})
+        plot_style = percentile_config.get("style", "fill")  # "fill" 或 "line"
+        num_layers_to_show = percentile_config.get("num_layers_to_show", 4)
+
+        for key, data in percentile_stats.items():
+            stats = data["stats"]  # {layer_name: percentile_data}
+            pattern = data["pattern"]
+            is_input = data["is_input"]
+            plot_type = "input" if is_input else "output"
+
+            layer_names_list = list(stats.keys())
+            percentile_data_list = [stats[name] for name in layer_names_list]
+
+            # 限制显示的层数
+            if len(layer_names_list) > num_layers_to_show:
+                # 均匀采样
+                indices = list(range(0, len(layer_names_list), max(1, len(layer_names_list) // num_layers_to_show)))
+                indices = indices[:num_layers_to_show]
+                layer_names_list = [layer_names_list[i] for i in indices]
+                percentile_data_list = [percentile_data_list[i] for i in indices]
+
+            # 生成多层对比图
+            if len(layer_names_list) > 1:
+                figure = percentile_viz.visualize_multi_layer_percentile(
+                    all_percentile_data=percentile_data_list,
+                    layer_names=layer_names_list,
+                    component_type=key,
+                    plot_type=plot_type,
+                    style=plot_style,
+                )
+                if figure:
+                    percentile_figures.append(figure)
+                    print(f"  Generated percentile multi-layer plot: {figure}")
+
+            # 为每层生成单独的图
+            for layer_name, percentile_data in zip(layer_names_list, percentile_data_list):
+                if plot_style == "line":
+                    figure = percentile_viz.visualize_percentile_line(
+                        percentile_data=percentile_data,
+                        layer_name=layer_name,
+                        component_type=key,
+                        plot_type=plot_type,
+                    )
+                else:
+                    figure = percentile_viz.visualize_percentile_range(
+                        percentile_data=percentile_data,
+                        layer_name=layer_name,
+                        component_type=key,
+                        plot_type=plot_type,
+                    )
+                if figure:
+                    percentile_figures.append(figure)
+                    print(f"  Generated percentile plot for {layer_name}: {figure}")
+
     # 生成outlier可视化
     outlier_figures = []
     if "layer_wise_count" in outlier_stats:
@@ -597,6 +685,20 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'</div>'
             )
         report_gen.add_section("Heatmap Analysis", heatmap_html)
+
+    # 添加percentile_range图表
+    if percentile_figures:
+        percentile_html = "<h2>Percentile Range Analysis</h2>"
+        percentile_html += "<p>Shows the distribution of activation values across hidden dimensions with different percentile ranges (25/75, 1/99, 0.01/99.99, Min/Max).</p>"
+        for fig in percentile_figures:
+            fig_name = fig.split("/")[-1]
+            percentile_html += (
+                f'<div style="margin: 20px 0; text-align: center;">'
+                f'<img src="{fig_name}" style="max-width:100%;">'
+                f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
+                f'</div>'
+            )
+        report_gen.add_section("Percentile Range Analysis", percentile_html)
 
     # 添加outlier图表
     if outlier_figures:

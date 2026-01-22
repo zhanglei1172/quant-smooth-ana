@@ -2,9 +2,10 @@
 Magnitude Calculator - Magnitude统计计算器
 
 计算激活值的magnitude统计（Top-1/2/3、Median、Min）
+以及百分位数范围统计（用于hidden dimension分布可视化）
 """
 
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -388,6 +389,229 @@ class MagnitudeCalculator(BaseStatCalculator):
                 heatmap_data.append(np.zeros((1, 1)))
 
         return np.array(heatmap_data)
+
+    def calculate_percentile_range(
+        self,
+        dataloader,
+        pattern: str = r"self_attn\.q_proj",
+        is_input: bool = True,
+        use_abs: bool = False,
+        **kwargs,
+    ) -> Dict[str, Dict[str, np.ndarray]]:
+        """
+        计算每个hidden dimension上的百分位数范围
+
+        用于生成类似于用户提供的百分位数范围可视化图
+
+        Args:
+            dataloader: 数据加载器
+            pattern: 正则表达式模式，用于匹配layer
+            is_input: True统计输入，False统计输出
+            use_abs: 是否使用绝对值
+
+        Returns:
+            percentile_stats: {
+                layer_name: {
+                    'p25': np.ndarray,      # 25th percentile [hidden_dim]
+                    'p75': np.ndarray,      # 75th percentile [hidden_dim]
+                    'p1': np.ndarray,       # 1st percentile [hidden_dim]
+                    'p99': np.ndarray,      # 99th percentile [hidden_dim]
+                    'p0_01': np.ndarray,    # 0.01th percentile [hidden_dim]
+                    'p99_99': np.ndarray,   # 99.99th percentile [hidden_dim]
+                    'min': np.ndarray,      # min values [hidden_dim]
+                    'max': np.ndarray,      # max values [hidden_dim]
+                }
+            }
+        """
+        # 获取所有匹配的layer
+        layer_names = self.matcher.match_layers(pattern)
+        layer_names = self.matcher.filter_by_selected(layer_names)
+        num_layers = len(layer_names)
+
+        print(f"\nDebug: Calculating percentile range for pattern={pattern}")
+        print(f"Debug: matched layers: {layer_names}")
+
+        if num_layers == 0:
+            raise ValueError(f"No layers found for pattern: {pattern}")
+
+        # 初始化存储：每层每个hidden_dim的所有值
+        # {layer_name: [hidden_dim, all_values_list]}
+        all_values = {name: [] for name in layer_names}
+        hidden_dim = None
+
+        num_samples = len(dataloader)
+        print(f"Processing {num_samples} samples...")
+
+        for sample_idx in range(num_samples):
+            data = dataloader[sample_idx][0].reshape(1, -1)
+
+            # 前向传播，收集激活值
+            activation_dict = self._collect_activations(data, layer_names, is_input)
+
+            # 收集每层的激活值
+            for layer_name in layer_names:
+                if layer_name not in activation_dict:
+                    print(f"Warning: No activation data for layer {layer_name}")
+                    continue
+
+                activation = activation_dict[layer_name]
+
+                # 处理激活值形状：[batch, seq_len, hidden_dim]
+                if len(activation.shape) == 3:
+                    activation = activation[0]  # [seq_len, hidden_dim]
+                
+                if use_abs:
+                    activation = activation.abs()
+                
+                activation = activation.float()  # 确保是float32
+
+                # 获取hidden_dim
+                if hidden_dim is None:
+                    hidden_dim = activation.shape[-1]
+
+                # 将activation转置为 [hidden_dim, seq_len]，然后添加到列表
+                activation_t = activation.T.cpu().numpy()  # [hidden_dim, seq_len]
+                
+                if len(all_values[layer_name]) == 0:
+                    # 第一次，初始化为列表
+                    all_values[layer_name] = [list(activation_t[i]) for i in range(hidden_dim)]
+                else:
+                    # 追加数据
+                    for i in range(hidden_dim):
+                        all_values[layer_name][i].extend(activation_t[i])
+
+        # 计算百分位数统计
+        percentile_stats = {}
+
+        for layer_name in layer_names:
+            if len(all_values[layer_name]) == 0:
+                print(f"Warning: No data collected for layer {layer_name}")
+                continue
+
+            layer_hidden_dim = len(all_values[layer_name])
+            
+            # 初始化该层的统计数据
+            stats = {
+                'p25': np.zeros(layer_hidden_dim),
+                'p75': np.zeros(layer_hidden_dim),
+                'p1': np.zeros(layer_hidden_dim),
+                'p99': np.zeros(layer_hidden_dim),
+                'p0_01': np.zeros(layer_hidden_dim),
+                'p99_99': np.zeros(layer_hidden_dim),
+                'min': np.zeros(layer_hidden_dim),
+                'max': np.zeros(layer_hidden_dim),
+            }
+
+            # 计算每个hidden dimension的百分位数
+            for dim_idx in range(layer_hidden_dim):
+                values = np.array(all_values[layer_name][dim_idx])
+                
+                stats['p25'][dim_idx] = np.percentile(values, 25)
+                stats['p75'][dim_idx] = np.percentile(values, 75)
+                stats['p1'][dim_idx] = np.percentile(values, 1)
+                stats['p99'][dim_idx] = np.percentile(values, 99)
+                stats['p0_01'][dim_idx] = np.percentile(values, 0.01)
+                stats['p99_99'][dim_idx] = np.percentile(values, 99.99)
+                stats['min'][dim_idx] = np.min(values)
+                stats['max'][dim_idx] = np.max(values)
+
+            percentile_stats[layer_name] = stats
+            print(f"  Computed percentile stats for {layer_name}: hidden_dim={layer_hidden_dim}")
+
+        return percentile_stats
+
+    def calculate_single_layer_percentile(
+        self,
+        dataloader,
+        layer_name: str,
+        is_input: bool = True,
+        use_abs: bool = False,
+        **kwargs,
+    ) -> Dict[str, np.ndarray]:
+        """
+        计算单层的百分位数范围
+
+        Args:
+            dataloader: 数据加载器
+            layer_name: 层名称
+            is_input: True统计输入，False统计输出
+            use_abs: 是否使用绝对值
+
+        Returns:
+            percentile_data: {
+                'p25': np.ndarray,      # 25th percentile [hidden_dim]
+                'p75': np.ndarray,      # 75th percentile [hidden_dim]
+                'p1': np.ndarray,       # 1st percentile [hidden_dim]
+                'p99': np.ndarray,      # 99th percentile [hidden_dim]
+                'p0_01': np.ndarray,    # 0.01th percentile [hidden_dim]
+                'p99_99': np.ndarray,   # 99.99th percentile [hidden_dim]
+                'min': np.ndarray,      # min values [hidden_dim]
+                'max': np.ndarray,      # max values [hidden_dim]
+            }
+        """
+        # 收集该层所有样本的激活值
+        all_values = []
+        hidden_dim = None
+
+        num_samples = len(dataloader)
+
+        for sample_idx in range(num_samples):
+            data = dataloader[sample_idx][0].reshape(1, -1)
+
+            # 前向传播，收集激活值
+            activation_dict = self._collect_activations(data, [layer_name], is_input)
+
+            if layer_name not in activation_dict:
+                continue
+
+            activation = activation_dict[layer_name]
+
+            # 处理激活值形状
+            if len(activation.shape) == 3:
+                activation = activation[0]  # [seq_len, hidden_dim]
+            
+            if use_abs:
+                activation = activation.abs()
+            
+            activation = activation.float()
+
+            if hidden_dim is None:
+                hidden_dim = activation.shape[-1]
+                all_values = [[] for _ in range(hidden_dim)]
+
+            # 添加数据
+            activation_t = activation.T.cpu().numpy()  # [hidden_dim, seq_len]
+            for i in range(hidden_dim):
+                all_values[i].extend(activation_t[i])
+
+        if hidden_dim is None:
+            raise ValueError(f"No activation data collected for layer {layer_name}")
+
+        # 计算百分位数
+        stats = {
+            'p25': np.zeros(hidden_dim),
+            'p75': np.zeros(hidden_dim),
+            'p1': np.zeros(hidden_dim),
+            'p99': np.zeros(hidden_dim),
+            'p0_01': np.zeros(hidden_dim),
+            'p99_99': np.zeros(hidden_dim),
+            'min': np.zeros(hidden_dim),
+            'max': np.zeros(hidden_dim),
+        }
+
+        for dim_idx in range(hidden_dim):
+            values = np.array(all_values[dim_idx])
+            
+            stats['p25'][dim_idx] = np.percentile(values, 25)
+            stats['p75'][dim_idx] = np.percentile(values, 75)
+            stats['p1'][dim_idx] = np.percentile(values, 1)
+            stats['p99'][dim_idx] = np.percentile(values, 99)
+            stats['p0_01'][dim_idx] = np.percentile(values, 0.01)
+            stats['p99_99'][dim_idx] = np.percentile(values, 99.99)
+            stats['min'][dim_idx] = np.min(values)
+            stats['max'][dim_idx] = np.max(values)
+
+        return stats
 
     def get_stat_name(self) -> str:
         """返回统计指标名称"""

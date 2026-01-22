@@ -45,6 +45,7 @@ visualization:
     outlier_token: true
     heatmap_3d: true
     distribution: true
+    percentile_range: true  # 启用百分位数范围可视化
   
   # Magnitude configuration - 使用正则表达式匹配层
   magnitude:
@@ -57,6 +58,16 @@ visualization:
     reduce_dim: -1 # -1 for in-channel(cross token), -2 for token
     combined_plot: true
   
+  # Percentile Range configuration - 百分位数范围可视化
+  # 展示每个hidden dimension上激活值的百分位数分布
+  percentile_range:
+    patterns:
+      - "self_attn\\.q_proj"  # 匹配q_proj层
+      - "self_attn\\.k_proj"  # 匹配k_proj层
+    is_input: true            # true统计输入，false统计输出
+    use_abs: false            # 是否使用绝对值
+    style: "line"             # 绘图风格: "fill"填充模式 或 "line"线条模式
+    num_layers_to_show: 4     # 显示的层数
 
   # Outlier configuration - 使用正则表达式匹配层
   outlier:

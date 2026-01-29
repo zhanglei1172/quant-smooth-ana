@@ -101,7 +101,10 @@ def load_model(config: dict):
     Returns:
         模型实例
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+    from transformers.models.qwen3_omni_moe.modeling_qwen3_omni_moe import (
+        Qwen3OmniMoeForConditionalGeneration,
+    )
 
     model_path = config.get("model", {}).get("path")
 
@@ -110,25 +113,37 @@ def load_model(config: dict):
 
     print(f"Loading model from {model_path}...")
 
+    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+    print(f"Model architecture: {model_config.model_type}")
+
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        trust_remote_code=True,
-        torch_dtype="auto",
-        device_map="auto",  # 改为 'cuda:0'
-    )
+    if config.get("model", {}).get("name") == "qwen3_omni_moe_thinker":
+        model = Qwen3OmniMoeForConditionalGeneration.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+            device_map="auto",  # 改为 'cuda:0'
+        )
+        model = model.thinker
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            torch_dtype="auto",
+            device_map="auto",  # 改为 'cuda:0'
+        )
 
     # 打印模型配置
-    print(
-        f"Model config: max_position_embeddings={model.config.max_position_embeddings}"
-    )
-    print(f"Model vocab size: {model.config.vocab_size}")
+    # print(
+    #     f"Model config: max_position_embeddings={model.config.max_position_embeddings}"
+    # )
+    # print(f"Model vocab size: {model.config.vocab_size}")
 
     # 打印模型设备映射
-    print(f"Model device map: {model.hf_device_map}")
+    # print(f"Model device map: {model.hf_device_map}")
 
     # 设置pad_token
     if tokenizer.pad_token is None:
@@ -395,7 +410,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
         percentile_patterns = percentile_config.get("patterns", patterns)
         is_input = percentile_config.get("is_input", True)
         use_abs = percentile_config.get("use_abs", False)
-        
+
         for pattern in percentile_patterns:
             try:
                 stats = magnitude_calc.calculate_percentile_range(
@@ -413,7 +428,9 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                     "is_input": is_input,
                 }
             except Exception as e:
-                print(f"  Warning: Could not calculate percentile range for {pattern}: {e}")
+                print(
+                    f"  Warning: Could not calculate percentile range for {pattern}: {e}"
+                )
 
     # 生成可视化
     from visualization.magnitude_plot import MagnitudeVisualizer
@@ -550,7 +567,13 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
             # 限制显示的层数
             if len(layer_names_list) > num_layers_to_show:
                 # 均匀采样
-                indices = list(range(0, len(layer_names_list), max(1, len(layer_names_list) // num_layers_to_show)))
+                indices = list(
+                    range(
+                        0,
+                        len(layer_names_list),
+                        max(1, len(layer_names_list) // num_layers_to_show),
+                    )
+                )
                 indices = indices[:num_layers_to_show]
                 layer_names_list = [layer_names_list[i] for i in indices]
                 percentile_data_list = [percentile_data_list[i] for i in indices]
@@ -569,7 +592,9 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                     print(f"  Generated percentile multi-layer plot: {figure}")
 
             # 为每层生成单独的图
-            for layer_name, percentile_data in zip(layer_names_list, percentile_data_list):
+            for layer_name, percentile_data in zip(
+                layer_names_list, percentile_data_list
+            ):
                 if plot_style == "line":
                     figure = percentile_viz.visualize_percentile_line(
                         percentile_data=percentile_data,
@@ -643,7 +668,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Magnitude Analysis", magnitude_html)
 
@@ -656,7 +681,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Weight Magnitude Analysis", weight_html)
 
@@ -669,7 +694,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Distribution Analysis", distribution_html)
 
@@ -682,7 +707,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Heatmap Analysis", heatmap_html)
 
@@ -696,7 +721,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Percentile Range Analysis", percentile_html)
 
@@ -709,7 +734,7 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
                 f'<div style="margin: 20px 0; text-align: center;">'
                 f'<img src="{fig_name}" style="max-width:100%;">'
                 f'<p style="color: #666; font-size: 14px; margin-top: 5px;">{fig_name}</p>'
-                f'</div>'
+                f"</div>"
             )
         report_gen.add_section("Outlier Analysis", outlier_html)
 

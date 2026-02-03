@@ -13,8 +13,12 @@ import torch
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from compressed_tensors.offload.dispatch import (
+    dispatch_model,
+    offload_model,
+)
+
 from core.layer_matcher import LayerMatcher, LayerSelector
-from core.memory_manager import AutoMemoryManager
 from utils.config import ConfigLoader
 
 
@@ -125,7 +129,7 @@ def load_model(config: dict):
             model_path,
             trust_remote_code=True,
             torch_dtype="auto",
-            device_map="auto",  # 改为 'cuda:0'
+            device_map="cpu",  # 改为 'cuda:0'
         )
         model = model.thinker
     else:
@@ -133,9 +137,19 @@ def load_model(config: dict):
             model_path,
             trust_remote_code=True,
             torch_dtype="auto",
-            device_map="auto",  # 改为 'cuda:0'
+            device_map="cpu",  # 改为 'cuda:0'
         )
-
+    auto_offload = config.get("memory", {}).get("auto_offload", False)
+    onload_device = config.get("memory", {}).get("device", "cuda")
+    offload_device = config.get("memory", {}).get("offload_device", "cpu")
+    if auto_offload:
+        offload_model(
+            model,
+            onload_device=onload_device,
+            offload_device=offload_device,
+        )
+    else:
+        dispatch_model(model)
     # 打印模型配置
     # print(
     #     f"Model config: max_position_embeddings={model.config.max_position_embeddings}"
@@ -252,20 +266,13 @@ def run_analysis(config: dict, model, tokenizer, dataloader):
     else:
         print("\nNo patterns found in layer_selection config, using all layers")
 
-    # 创建显存管理器
-    memory_config = config.get("memory", {})
-    memory_manager = AutoMemoryManager(
-        model=model,
-        device=memory_config.get("device", "cuda"),
-        offload_device=memory_config.get("offload_device", "cpu"),
-    )
 
     # 运行统计计算
-    from statistics.magnitude import MagnitudeCalculator
-    from statistics.outlier import OutlierCalculator
+    from statis.magnitude import MagnitudeCalculator
+    from statis.outlier import OutlierCalculator
 
-    magnitude_calc = MagnitudeCalculator(model, layer_matcher, memory_manager)
-    outlier_calc = OutlierCalculator(model, layer_matcher, memory_manager)
+    magnitude_calc = MagnitudeCalculator(model, layer_matcher)
+    outlier_calc = OutlierCalculator(model, layer_matcher)
 
     # 计算magnitude统计
     magnitude_config = viz_config.get("magnitude", {})

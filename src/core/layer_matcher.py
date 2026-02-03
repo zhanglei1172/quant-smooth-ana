@@ -9,6 +9,21 @@ import re
 from typing import List, Optional
 
 
+def has_params(module) -> bool:
+    """
+    检查模块是否有参数
+
+    Args:
+        module: PyTorch模块
+
+    Returns:
+        是否有参数
+    """
+    if hasattr(module, "parameters"):
+        for _ in module.parameters():
+            return True
+    return False
+
 class LayerMatcher:
     """
     Layer名称匹配系统，只使用正则表达式
@@ -98,7 +113,7 @@ class LayerMatcher:
             self._all_layer_names = []
             for name, module in self.model.named_modules():
                 # 只包含有参数的模块
-                if hasattr(module, "parameters") and list(module.parameters()):
+                if has_params(module):
                     self._all_layer_names.append(name)
 
         return self._all_layer_names

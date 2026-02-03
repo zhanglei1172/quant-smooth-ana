@@ -10,4 +10,8 @@ dependencies = [
     "pyyaml>=6.0",
     "torch>=2.0.0",
     "transformers>=4.40.0",
+    "compressed-tensors",
 ]
+
+[tool.uv.sources]
+compressed-tensors = { git = "git+https://git@github.com/zhanglei1172/compressed-tensors.git", rev = "lz_exp" }

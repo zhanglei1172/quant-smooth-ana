@@ -17,18 +17,16 @@ class BaseStatCalculator(ABC):
     所有统计计算器都应该继承这个类
     """
 
-    def __init__(self, model, layer_matcher, memory_manager):
+    def __init__(self, model, layer_matcher):
         """
         初始化统计计算器
 
         Args:
             model: PyTorch模型实例
             layer_matcher: Layer匹配器
-            memory_manager: 显存管理器
         """
         self.model = model
         self.matcher = layer_matcher
-        self.memory_manager = memory_manager
 
     @abstractmethod
     def calculate(self, dataloader, **kwargs) -> Any:
